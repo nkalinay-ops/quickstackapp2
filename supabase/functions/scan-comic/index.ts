@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
@@ -57,31 +57,34 @@ Deno.serve(async (req: Request) => {
         messages: [
           {
             role: "system",
-            content: `You are an expert at extracting text from comic book covers. Your primary goal is text accuracy. Follow these rules:
+            content: `You are an expert at extracting text from comic book covers.
 
-1. PRIORITIZE TEXT ACCURACY over speed
-2. IGNORE background art, illustrations, and decorative elements
-3. FOCUS on readable text only (title, issue number, publisher, dates, prices)
-4. Handle stylized comic book fonts carefully - they often use custom lettering
-5. Be resilient to glare, skew, shadows, and imperfect lighting
-6. If text is partially obscured or unclear, make your best guess but indicate uncertainty
+CRITICAL: You MUST respond with valid JSON only. No explanatory text before or after.
 
-EXTRACTION PRIORITY:
-1. Large prominent text first (main title, issue number)
-2. Smaller metadata (publisher name, date, pricing, barcodes)
-3. Ignore decorative, artistic, or illegible text
-
-OUTPUT FORMAT:
-Return ONLY valid JSON with these fields:
+Your response format MUST be:
 {
-  "title": "string (main comic title)",
-  "issue_number": "string (number only, no # symbol)",
-  "publisher": "string (Marvel, DC, Image, etc.)",
+  "title": "string",
+  "issue_number": "string",
+  "publisher": "string",
   "year": number or null,
   "confidence": "high" | "medium" | "low"
 }
 
-If uncertain about any field, use empty string for strings, null for year, and set confidence to "medium" or "low".`
+Rules:
+1. Extract the main comic title (large text)
+2. Extract issue number (number only, no # symbol)
+3. Extract publisher name (Marvel, DC, Image, etc.)
+4. Extract year if visible
+5. If you cannot see any text clearly, still return JSON with empty strings and "low" confidence
+6. NEVER respond with explanatory text - ONLY valid JSON
+
+Example responses:
+Good: {"title":"Spider-Man","issue_number":"1","publisher":"Marvel","year":1990,"confidence":"high"}
+Good: {"title":"","issue_number":"","publisher":"","year":null,"confidence":"low"}
+Bad: "I cannot see the text clearly in this image"
+Bad: "Here is what I found: {..."
+
+ALWAYS return valid JSON, even if the image is unclear.`
           },
           {
             role: "user",
@@ -102,14 +105,19 @@ If uncertain about any field, use empty string for strings, null for year, and s
         ],
         max_tokens: 500,
         temperature: 0.1,
+        response_format: { type: "json_object" },
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("OpenAI API error:", errorText);
+      console.error("OpenAI API error:", response.status, errorText);
       return new Response(
-        JSON.stringify({ error: "Failed to analyze image" }),
+        JSON.stringify({
+          error: "Failed to analyze image",
+          detail: `OpenAI API returned ${response.status}`,
+          openaiError: errorText.substring(0, 200)
+        }),
         {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -118,11 +126,34 @@ If uncertain about any field, use empty string for strings, null for year, and s
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    console.log("OpenAI response data:", JSON.stringify(data));
+
+    const message = data.choices?.[0]?.message;
+    const content = message?.content;
+    const refusal = message?.refusal;
+
+    if (refusal) {
+      console.error("OpenAI refused request:", refusal);
+      return new Response(
+        JSON.stringify({
+          error: "Unable to process image",
+          detail: "The image could not be analyzed. Please ensure it's a clear photo of a comic book cover."
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
 
     if (!content) {
+      console.error("No content in OpenAI response:", JSON.stringify(data));
       return new Response(
-        JSON.stringify({ error: "No content in response" }),
+        JSON.stringify({
+          error: "No content in response",
+          detail: "OpenAI returned an empty response",
+          debugInfo: JSON.stringify(data).substring(0, 200)
+        }),
         {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -140,8 +171,28 @@ If uncertain about any field, use empty string for strings, null for year, and s
       }
     } catch (parseError) {
       console.error("Failed to parse JSON:", content);
+
+      if (content.toLowerCase().includes('unable') ||
+          content.toLowerCase().includes('cannot') ||
+          content.toLowerCase().includes('no text') ||
+          content.toLowerCase().includes('not visible')) {
+        return new Response(
+          JSON.stringify({
+            error: "Unable to read comic cover. Please ensure the image is clear, well-lit, and the text is visible.",
+            detail: "The AI could not extract text from this image. Try taking another photo with better lighting or angle."
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+
       return new Response(
-        JSON.stringify({ error: "Failed to parse comic data", raw: content }),
+        JSON.stringify({
+          error: "Could not understand the response from the AI. Please try again.",
+          detail: content.substring(0, 200)
+        }),
         {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
+import { PasswordStrength, validatePassword } from './PasswordStrength';
 
 export function Auth() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [betaKey, setBetaKey] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const { signIn, signUp } = useAuth();
+  const { signIn } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -16,7 +19,47 @@ export function Auth() {
 
     try {
       if (isSignUp) {
-        await signUp(email, password);
+        if (!betaKey.trim()) {
+          setError('Beta key is required to sign up');
+          setLoading(false);
+          return;
+        }
+
+        const passwordValidation = validatePassword(password);
+        if (!passwordValidation.isValid) {
+          setError(passwordValidation.error || 'Password does not meet requirements');
+          setLoading(false);
+          return;
+        }
+
+        const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/validate-beta-key`;
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            keyCode: betaKey,
+            email,
+            password,
+          }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          setError(result.error || 'Failed to validate beta key');
+          setLoading(false);
+          return;
+        }
+
+        if (result.session) {
+          const { error: sessionError } = await supabase.auth.setSession(result.session);
+          if (sessionError) {
+            console.error('Error setting session:', sessionError);
+            setError('Account created but failed to sign in. Please sign in manually.');
+          }
+        }
       } else {
         await signIn(email, password);
       }
@@ -61,11 +104,33 @@ export function Auth() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={12}
               className="w-full px-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="••••••••"
+              placeholder="••••••••••••"
             />
+            {isSignUp && <PasswordStrength password={password} />}
           </div>
+
+          {isSignUp && (
+            <div>
+              <label htmlFor="betaKey" className="block text-sm font-medium text-gray-300 mb-1">
+                Beta Key
+              </label>
+              <input
+                id="betaKey"
+                type="text"
+                value={betaKey}
+                onChange={(e) => setBetaKey(e.target.value)}
+                required={isSignUp}
+                className="w-full px-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono uppercase"
+                placeholder="BETA-XXXX-XXXX-XXXX"
+                maxLength={24}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Enter your beta key to create an account
+              </p>
+            </div>
+          )}
 
           {error && (
             <div className="text-red-400 text-sm bg-red-950 p-3 rounded-lg">

@@ -1,13 +1,16 @@
 import { ReactNode } from 'react';
-import { Home, Library, Plus, Heart, Settings } from 'lucide-react';
+import { Home, Library, Plus, Heart, Settings, Shield } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 type LayoutProps = {
   children: ReactNode;
-  currentPage: 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings';
-  onNavigate: (page: 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings') => void;
+  currentPage: 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin';
+  onNavigate: (page: 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin') => void;
 };
 
 export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
+  const { isAdmin } = useAuth();
+
   return (
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">
       <main className="flex-1 overflow-y-auto pb-20">
@@ -15,7 +18,7 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
       </main>
 
       <nav className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800">
-        <div className="flex justify-around items-center h-16 max-w-2xl mx-auto">
+        <div className={`flex justify-around items-center h-16 max-w-2xl mx-auto ${isAdmin ? 'px-2' : ''}`}>
           <NavButton
             icon={<Home size={24} />}
             label="Dashboard"
@@ -41,6 +44,14 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
             active={currentPage === 'wishlist'}
             onClick={() => onNavigate('wishlist')}
           />
+          {isAdmin && (
+            <NavButton
+              icon={<Shield size={24} />}
+              label="Admin"
+              active={currentPage === 'admin'}
+              onClick={() => onNavigate('admin')}
+            />
+          )}
           <NavButton
             icon={<Settings size={24} />}
             label="Settings"

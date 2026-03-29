@@ -69,11 +69,14 @@ export function AddComic() {
         body: JSON.stringify({ imageData: optimized.dataUrl }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to scan comic');
-      }
-
       const result = await response.json();
+
+      if (!response.ok) {
+        const errorMessage = result.detail || result.error || 'Failed to scan comic';
+        console.error('Scan error:', result);
+        alert(`Scanning failed: ${errorMessage}\n\nPlease try again with better lighting or enter details manually.`);
+        return;
+      }
 
       if (result.success && result.data) {
         const scannedTitle = result.data.title || '';
@@ -93,13 +96,15 @@ export function AddComic() {
             setDuplicateComic(duplicate);
             setShowDuplicateModal(true);
           }
+        } else {
+          alert('Could not extract all details from the image. Please review and fill in any missing information.');
         }
       } else {
         alert('Could not extract comic details. Please enter manually.');
       }
     } catch (error) {
       console.error('Error scanning comic:', error);
-      alert('Failed to scan comic. Please enter details manually.');
+      alert('An unexpected error occurred while scanning. Please enter details manually.');
     } finally {
       setScanning(false);
     }
