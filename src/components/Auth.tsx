@@ -146,13 +146,24 @@ export function Auth() {
             {loading ? 'Please wait...' : isSignUp ? 'Sign Up' : 'Sign In'}
           </button>
 
-          <button
-            type="button"
-            onClick={() => setIsSignUp(!isSignUp)}
-            className="w-full text-gray-400 hover:text-white transition-colors text-sm"
-          >
-            {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
-          </button>
+          <div className="space-y-2">
+            {!isSignUp && (
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'forgot-password' }))}
+                className="w-full text-gray-400 hover:text-white transition-colors text-sm"
+              >
+                Forgot your password?
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsSignUp(!isSignUp)}
+              className="w-full text-gray-400 hover:text-white transition-colors text-sm"
+            >
+              {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+            </button>
+          </div>
         </form>
       </div>
     </div>

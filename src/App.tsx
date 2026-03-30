@@ -9,14 +9,26 @@ import { Wishlist } from './pages/Wishlist';
 import { Settings } from './pages/Settings';
 import { BetaKeys } from './pages/BetaKeys';
 import { AdminPanel } from './pages/AdminPanel';
+import { ForgotPassword } from './pages/ForgotPassword';
+import { ResetPassword } from './pages/ResetPassword';
+import { TestPasswordReset } from './pages/TestPasswordReset';
 
 function AppContent() {
   const { user, loading } = useAuth();
-  const [currentPage, setCurrentPage] = useState<'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin'>('dashboard');
+  const [currentPage, setCurrentPage] = useState<'auth' | 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'forgot-password' | 'reset-password' | 'test-password-reset'>('dashboard');
 
   useEffect(() => {
-    if (user) {
+    const params = new URLSearchParams(window.location.search);
+    const page = params.get('page');
+
+    if (page === 'reset-password') {
+      setCurrentPage('reset-password');
+    } else if (page === 'test-password-reset') {
+      setCurrentPage('test-password-reset');
+    } else if (user) {
       setCurrentPage('dashboard');
+    } else {
+      setCurrentPage('auth');
     }
   }, [user]);
 
@@ -35,6 +47,18 @@ function AppContent() {
         <div className="text-gray-400">Loading...</div>
       </div>
     );
+  }
+
+  if (currentPage === 'forgot-password') {
+    return <ForgotPassword />;
+  }
+
+  if (currentPage === 'reset-password') {
+    return <ResetPassword />;
+  }
+
+  if (currentPage === 'test-password-reset') {
+    return <TestPasswordReset />;
   }
 
   if (!user) {

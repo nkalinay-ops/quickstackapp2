@@ -21,6 +21,11 @@ const isOriginAllowed = (origin: string | null): boolean => {
     return true;
   }
 
+  // Allow all Vercel deployments
+  if (origin.includes('.vercel.app')) {
+    return true;
+  }
+
   return false;
 };
 
