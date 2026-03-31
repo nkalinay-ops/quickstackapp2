@@ -317,26 +317,32 @@ export function Collection() {
 
           <div>
             <div className="text-sm text-gray-400 mb-2">Copies Owned</div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => handleDecrementCopy(selectedComic.id)}
-                disabled={selectedComic.copy_count <= 1 || isEditing}
-                className="p-2 bg-gray-800 text-white rounded-lg border border-gray-700 hover:bg-gray-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <Minus size={20} />
-              </button>
+            {isEditing ? (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => handleDecrementCopy(selectedComic.id)}
+                  disabled={selectedComic.copy_count <= 1}
+                  className="p-2 bg-gray-800 text-white rounded-lg border border-gray-700 hover:bg-gray-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <Minus size={20} />
+                </button>
+                <div className="flex items-center gap-2">
+                  <Copy size={20} className="text-blue-400" />
+                  <span className="text-2xl font-semibold text-blue-400">{selectedComic.copy_count}</span>
+                </div>
+                <button
+                  onClick={() => handleIncrementCopy(selectedComic.id)}
+                  className="p-2 bg-gray-800 text-white rounded-lg border border-gray-700 hover:bg-gray-700 transition-colors"
+                >
+                  <Plus size={20} />
+                </button>
+              </div>
+            ) : (
               <div className="flex items-center gap-2">
                 <Copy size={20} className="text-blue-400" />
                 <span className="text-2xl font-semibold text-blue-400">{selectedComic.copy_count}</span>
               </div>
-              <button
-                onClick={() => handleIncrementCopy(selectedComic.id)}
-                disabled={isEditing}
-                className="p-2 bg-gray-800 text-white rounded-lg border border-gray-700 hover:bg-gray-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <Plus size={20} />
-              </button>
-            </div>
+            )}
           </div>
 
           <div>
