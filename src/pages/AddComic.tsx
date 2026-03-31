@@ -23,29 +23,24 @@ export function AddComic() {
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
 
-  const checkForDuplicates = async (comicTitle: string, comicIssueNumber: string, comicPublisher: string): Promise<Comic | null> => {
+  const checkForDuplicates = async (comicTitle: string, comicIssueNumber: string): Promise<Comic | null> => {
     if (!user || !comicTitle.trim() || !comicIssueNumber.trim()) return null;
 
     try {
-      let query = supabase
+      const { data, error } = await supabase
         .from('comics')
         .select('*')
         .eq('user_id', user.id)
         .ilike('title', comicTitle.trim())
-        .ilike('issue_number', comicIssueNumber.trim());
-
-      if (comicPublisher.trim()) {
-        query = query.ilike('publisher', comicPublisher.trim());
-      }
-
-      const { data, error } = await query;
+        .ilike('issue_number', comicIssueNumber.trim())
+        .maybeSingle();
 
       if (error) {
         console.error('Error checking for duplicates:', error);
         return null;
       }
 
-      return data && data.length > 0 ? data[0] : null;
+      return data;
     } catch (error) {
       console.error('Error checking for duplicates:', error);
       return null;
@@ -94,8 +89,7 @@ export function AddComic() {
 
         if (scannedTitle && scannedIssue) {
           setCheckingDuplicate(true);
-          const scannedPublisher = result.data.publisher || '';
-          const duplicate = await checkForDuplicates(scannedTitle, scannedIssue, scannedPublisher);
+          const duplicate = await checkForDuplicates(scannedTitle, scannedIssue);
           setCheckingDuplicate(false);
 
           if (duplicate) {
@@ -263,23 +257,22 @@ export function AddComic() {
     e.preventDefault();
     if (!user || !title.trim()) return;
 
+    if (issueNumber.trim()) {
+      setCheckingDuplicate(true);
+      const duplicate = await checkForDuplicates(title, issueNumber);
+      setCheckingDuplicate(false);
+
+      if (duplicate) {
+        setDuplicateComic(duplicate);
+        setShowDuplicateModal(true);
+        return;
+      }
+    }
+
     setLoading(true);
     setSuccess(false);
 
     try {
-      if (title.trim() && issueNumber.trim()) {
-        setCheckingDuplicate(true);
-        const duplicate = await checkForDuplicates(title, issueNumber, publisher);
-        setCheckingDuplicate(false);
-
-        if (duplicate) {
-          setDuplicateComic(duplicate);
-          setShowDuplicateModal(true);
-          setLoading(false);
-          return;
-        }
-      }
-
       let colorImageUrl = null;
       let bwImageUrl = null;
 

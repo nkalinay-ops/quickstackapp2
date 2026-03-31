@@ -45,13 +45,20 @@ export function AdminPanel() {
 
   const loadUsers = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      console.log('Session check:', {
+        hasSession: !!session,
+        sessionError: sessionError?.message,
+        tokenLength: session?.access_token?.length,
+      });
+
       if (!session) {
         setError('No active session');
         return;
       }
 
-      console.log('Making request to edge function with session:', session.user.email);
+      console.log('Making request to edge function with token length:', session.access_token.length);
 
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-admin-users`,
@@ -60,16 +67,17 @@ export function AdminPanel() {
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
             'Content-Type': 'application/json',
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
           },
           body: JSON.stringify({ action: 'list_users' }),
         }
       );
 
       const data = await response.json();
-      console.log('Response status:', response.status, 'Data:', data);
+      console.log('Full response:', { status: response.status, data });
 
       if (!response.ok) {
-        throw new Error(data.error || `Failed to load users: ${response.status}`);
+        throw new Error(data.error || data.details || `Failed to load users: ${response.status}`);
       }
 
       setUsers(data.users || []);
@@ -114,6 +122,7 @@ export function AdminPanel() {
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
             'Content-Type': 'application/json',
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
           },
           body: JSON.stringify({ action: 'promote_admin', userId }),
         }
@@ -141,6 +150,7 @@ export function AdminPanel() {
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
             'Content-Type': 'application/json',
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
           },
           body: JSON.stringify({ action: 'revoke_admin', userId }),
         }
@@ -181,6 +191,7 @@ export function AdminPanel() {
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
             'Content-Type': 'application/json',
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
           },
           body: JSON.stringify({ action: 'terminate_user', userId, reason }),
         }

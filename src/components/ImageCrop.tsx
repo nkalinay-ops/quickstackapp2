@@ -63,79 +63,94 @@ export function ImageCrop({ imageDataUrl, onCropComplete, onCancel }: ImageCropP
       gray[i / 4] = 0.299 * r + 0.587 * g + 0.114 * b;
     }
 
+    const blurred = new Uint8Array(w * h);
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const idx = y * w + x;
+        blurred[idx] = Math.floor(
+          (gray[idx - w - 1] + gray[idx - w] + gray[idx - w + 1] +
+           gray[idx - 1] + gray[idx] + gray[idx + 1] +
+           gray[idx + w - 1] + gray[idx + w] + gray[idx + w + 1]) / 9
+        );
+      }
+    }
+
     const edges = new Uint8Array(w * h);
-    const threshold = 25;
+    const threshold = 20;
 
     for (let y = 1; y < h - 1; y++) {
       for (let x = 1; x < w - 1; x++) {
         const idx = y * w + x;
         const gx =
-          -gray[idx - w - 1] - 2 * gray[idx - 1] - gray[idx + w - 1] +
-          gray[idx - w + 1] + 2 * gray[idx + 1] + gray[idx + w + 1];
+          -blurred[idx - w - 1] - 2 * blurred[idx - 1] - blurred[idx + w - 1] +
+          blurred[idx - w + 1] + 2 * blurred[idx + 1] + blurred[idx + w + 1];
         const gy =
-          -gray[idx - w - 1] - 2 * gray[idx - w] - gray[idx - w + 1] +
-          gray[idx + w - 1] + 2 * gray[idx + w] + gray[idx + w + 1];
+          -blurred[idx - w - 1] - 2 * blurred[idx - w] - blurred[idx - w + 1] +
+          blurred[idx + w - 1] + 2 * blurred[idx + w] + blurred[idx + w + 1];
         const magnitude = Math.sqrt(gx * gx + gy * gy);
         edges[idx] = magnitude > threshold ? 255 : 0;
       }
     }
 
-    const margin = Math.floor(Math.min(w, h) * 0.02);
+    const margin = 5;
     let minX = margin;
     let maxX = w - margin;
     let minY = margin;
     let maxY = h - margin;
 
-    const edgeDensity = (x1: number, x2: number, y1: number, y2: number) => {
-      let count = 0;
-      const total = (x2 - x1) * (y2 - y1);
-      for (let y = y1; y < y2; y++) {
-        for (let x = x1; x < x2; x++) {
-          if (edges[y * w + x] > 0) count++;
-        }
-      }
-      return count / total;
-    };
-
-    const scanWidth = 3;
+    const minEdgePercentage = 0.03;
+    const minEdgesVertical = Math.floor((h - 2 * margin) * minEdgePercentage);
+    const minEdgesHorizontal = Math.floor((w - 2 * margin) * minEdgePercentage);
 
     for (let x = margin; x < w / 2; x++) {
-      const density = edgeDensity(x, x + scanWidth, margin, h - margin);
-      if (density > 0.08) {
+      let edgeCount = 0;
+      for (let y = margin; y < h - margin; y++) {
+        if (edges[y * w + x] > 0) edgeCount++;
+      }
+      if (edgeCount > minEdgesVertical) {
         minX = x;
         break;
       }
     }
 
     for (let x = w - margin; x > w / 2; x--) {
-      const density = edgeDensity(x - scanWidth, x, margin, h - margin);
-      if (density > 0.08) {
+      let edgeCount = 0;
+      for (let y = margin; y < h - margin; y++) {
+        if (edges[y * w + x] > 0) edgeCount++;
+      }
+      if (edgeCount > minEdgesVertical) {
         maxX = x;
         break;
       }
     }
 
     for (let y = margin; y < h / 2; y++) {
-      const density = edgeDensity(margin, w - margin, y, y + scanWidth);
-      if (density > 0.08) {
+      let edgeCount = 0;
+      for (let x = margin; x < w - margin; x++) {
+        if (edges[y * w + x] > 0) edgeCount++;
+      }
+      if (edgeCount > minEdgesHorizontal) {
         minY = y;
         break;
       }
     }
 
     for (let y = h - margin; y > h / 2; y--) {
-      const density = edgeDensity(margin, w - margin, y - scanWidth, y);
-      if (density > 0.08) {
+      let edgeCount = 0;
+      for (let x = margin; x < w - margin; x++) {
+        if (edges[y * w + x] > 0) edgeCount++;
+      }
+      if (edgeCount > minEdgesHorizontal) {
         maxY = y;
         break;
       }
     }
 
-    const padding = Math.floor(Math.min(w, h) * 0.01);
-    minX = Math.max(0, minX - padding);
-    maxX = Math.min(w, maxX + padding);
-    minY = Math.max(0, minY - padding);
-    maxY = Math.min(h, maxY + padding);
+    const extensionPadding = 5;
+    minX = Math.max(0, minX - extensionPadding);
+    maxX = Math.min(w, maxX + extensionPadding);
+    minY = Math.max(0, minY - extensionPadding);
+    maxY = Math.min(h, maxY + extensionPadding);
 
     setPoints([
       { x: minX / w, y: minY / h },

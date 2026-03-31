@@ -23,13 +23,13 @@ export default function DuplicateModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-gray-900 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-gray-800">
         <div className="sticky top-0 bg-gray-900 border-b border-gray-800 p-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold text-white">Duplicate Comic Detected</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-200 transition-colors"
+            className="text-gray-400 hover:text-gray-300 transition-colors"
             disabled={isProcessing}
           >
             <X className="w-6 h-6" />
@@ -46,7 +46,7 @@ export default function DuplicateModal({
           <div className="grid md:grid-cols-2 gap-6 mb-6">
             <div className="space-y-3">
               <h3 className="font-semibold text-white flex items-center gap-2">
-                <Copy className="w-5 h-5 text-blue-400" />
+                <Copy className="w-5 h-5 text-emerald-400" />
                 Existing Comic
               </h3>
               {existingComic.color_image_url && (
@@ -63,7 +63,7 @@ export default function DuplicateModal({
                   <p className="text-sm text-gray-400">{existingComic.publisher}</p>
                 )}
                 <div className="pt-2 border-t border-gray-700">
-                  <p className="text-sm font-semibold text-blue-400">
+                  <p className="text-sm font-semibold text-emerald-400">
                     Current Copies: {existingComic.copy_count}
                   </p>
                 </div>
@@ -72,7 +72,7 @@ export default function DuplicateModal({
 
             <div className="space-y-3">
               <h3 className="font-semibold text-white flex items-center gap-2">
-                <Plus className="w-5 h-5 text-green-400" />
+                <Plus className="w-5 h-5 text-emerald-400" />
                 New Scan
               </h3>
               {newComicImage && (
@@ -94,7 +94,7 @@ export default function DuplicateModal({
             <button
               onClick={onIncreaseCopyCount}
               disabled={isProcessing}
-              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full bg-emerald-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               <Copy className="w-5 h-5" />
               {isProcessing ? 'Processing...' : `Increase to ${existingComic.copy_count + 1} Copies`}
@@ -114,7 +114,7 @@ export default function DuplicateModal({
               disabled={isProcessing}
               className="w-full bg-gray-800 text-gray-300 py-3 px-4 rounded-lg font-medium border border-gray-700 hover:bg-gray-750 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Discard Scan
+              Discard
             </button>
           </div>
         </div>

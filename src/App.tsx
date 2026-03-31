@@ -21,14 +21,23 @@ function AppContent() {
     const params = new URLSearchParams(window.location.search);
     const page = params.get('page');
 
-    if (page === 'reset-password') {
-      setCurrentPage('reset-password');
-    } else if (page === 'test-password-reset') {
-      setCurrentPage('test-password-reset');
-    } else if (user) {
-      setCurrentPage('dashboard');
+    // If user is logged out, only allow specific pages
+    if (!user) {
+      if (page === 'reset-password') {
+        setCurrentPage('reset-password');
+      } else if (page === 'test-password-reset') {
+        setCurrentPage('test-password-reset');
+      } else if (page === 'forgot-password') {
+        setCurrentPage('forgot-password');
+      } else {
+        // Clear any URL parameters and go to auth page
+        window.history.replaceState({}, '', window.location.pathname);
+        setCurrentPage('auth');
+      }
     } else {
-      setCurrentPage('auth');
+      // User is logged in, go to dashboard
+      window.history.replaceState({}, '', window.location.pathname);
+      setCurrentPage('dashboard');
     }
   }, [user]);
 

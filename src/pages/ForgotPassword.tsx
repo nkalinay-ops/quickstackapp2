@@ -59,9 +59,14 @@ export function ForgotPassword() {
 
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-8">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-white mb-2">Reset your password</h1>
+      <div className="w-full max-w-md space-y-6">
+        <div className="text-center flex flex-col items-center">
+          <img
+            src="/ChatGPT_Image_Mar_18,_2026,_09_08_29_PM.png"
+            alt="QuickStack"
+            className="w-64 h-auto mb-1"
+          />
+          <h2 className="text-2xl font-bold text-white mb-2">Reset your password</h2>
           <p className="text-gray-400">Enter your email and we'll send you a reset link</p>
         </div>
 

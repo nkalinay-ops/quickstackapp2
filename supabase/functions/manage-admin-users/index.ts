@@ -21,7 +21,6 @@ const isOriginAllowed = (origin: string | null): boolean => {
     return true;
   }
 
-  // Allow all Vercel deployments
   if (origin.includes('.vercel.app')) {
     return true;
   }
@@ -63,7 +62,13 @@ Deno.serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const authHeader = req.headers.get("Authorization");
 
+    console.log("Request headers:", {
+      hasAuth: !!authHeader,
+      origin: req.headers.get("origin"),
+    });
+
     if (!authHeader) {
+      console.error("Missing authorization header");
       return new Response(
         JSON.stringify({ error: "Missing authorization header" }),
         {
@@ -73,7 +78,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey, {
+    const serviceClient = createClient(supabaseUrl, supabaseServiceKey, {
       auth: {
         autoRefreshToken: false,
         persistSession: false,
@@ -81,14 +86,35 @@ Deno.serve(async (req: Request) => {
     });
 
     const token = authHeader.replace("Bearer ", "");
-    const {
-      data: { user },
-      error: authError,
-    } = await supabaseClient.auth.getUser(token);
+    console.log("Verifying token, length:", token.length);
+
+    const userClient = createClient(supabaseUrl, supabaseServiceKey, {
+      global: {
+        headers: {
+          Authorization: authHeader,
+        },
+      },
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
+
+    const { data: { user }, error: authError } = await userClient.auth.getUser();
+
+    console.log("Auth verification result:", {
+      hasUser: !!user,
+      userId: user?.id,
+      error: authError?.message,
+    });
 
     if (authError || !user) {
+      console.error("Auth verification failed:", authError);
       return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
+        JSON.stringify({
+          error: "Unauthorized",
+          details: authError?.message || "Invalid or expired token",
+        }),
         {
           status: 401,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -96,13 +122,37 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { data: profile, error: profileError } = await supabaseClient
+    const userId = user.id;
+    console.log("User authenticated:", userId);
+
+    const { data: profile, error: profileError } = await serviceClient
       .from("user_profiles")
       .select("is_admin")
-      .eq("id", user.id)
-      .single();
+      .eq("id", userId)
+      .maybeSingle();
 
-    if (profileError || !profile?.is_admin) {
+    if (profileError) {
+      console.error("Profile fetch error:", profileError);
+      return new Response(
+        JSON.stringify({ error: `Profile error: ${profileError.message}` }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (!profile) {
+      return new Response(
+        JSON.stringify({ error: "User profile not found" }),
+        {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (!profile.is_admin) {
       return new Response(
         JSON.stringify({ error: "Forbidden: Admin access required" }),
         {
@@ -115,7 +165,7 @@ Deno.serve(async (req: Request) => {
     const body: AdminActionRequest = await req.json();
 
     if (body.action === "list_users") {
-      const { data: users, error: usersError } = await supabaseClient
+      const { data: users, error: usersError } = await serviceClient
         .from("user_profiles")
         .select(`
           id,
@@ -134,13 +184,13 @@ Deno.serve(async (req: Request) => {
       }
 
       const userIds = users.map((u) => u.id);
-      const { data: authUsers, error: authError } = await supabaseClient.auth.admin.listUsers();
+      const { data: authUsers, error: authError } = await serviceClient.auth.admin.listUsers();
 
       if (authError) {
         throw authError;
       }
 
-      const { data: terminations, error: terminationsError } = await supabaseClient
+      const { data: terminations, error: terminationsError } = await serviceClient
         .from("user_terminations")
         .select("*");
 
@@ -173,12 +223,12 @@ Deno.serve(async (req: Request) => {
     }
 
     if (body.action === "promote_admin" && body.userId) {
-      const { error: updateError } = await supabaseClient
+      const { error: updateError } = await serviceClient
         .from("user_profiles")
         .update({
           is_admin: true,
           admin_granted_at: new Date().toISOString(),
-          admin_granted_by: user.id,
+          admin_granted_by: userId,
         })
         .eq("id", body.userId);
 
@@ -196,7 +246,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (body.action === "revoke_admin" && body.userId) {
-      if (body.userId === user.id) {
+      if (body.userId === userId) {
         return new Response(
           JSON.stringify({ error: "Cannot revoke your own admin status" }),
           {
@@ -206,7 +256,7 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      const { error: updateError } = await supabaseClient
+      const { error: updateError } = await serviceClient
         .from("user_profiles")
         .update({
           is_admin: false,
@@ -229,7 +279,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (body.action === "terminate_user" && body.userId) {
-      if (body.userId === user.id) {
+      if (body.userId === userId) {
         return new Response(
           JSON.stringify({ error: "Cannot terminate your own account" }),
           {
@@ -239,9 +289,9 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      console.log("Attempting to terminate user:", body.userId, "by:", user.id);
+      console.log("Attempting to terminate user:", body.userId, "by:", userId);
 
-      const { data: existingTermination } = await supabaseClient
+      const { data: existingTermination } = await serviceClient
         .from("user_terminations")
         .select("*")
         .eq("user_id", body.userId)
@@ -257,11 +307,11 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      const { error: terminationError } = await supabaseClient
+      const { error: terminationError } = await serviceClient
         .from("user_terminations")
         .insert({
           user_id: body.userId,
-          terminated_by: user.id,
+          terminated_by: userId,
           reason: body.reason || null,
         });
 

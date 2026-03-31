@@ -75,20 +75,11 @@ export function Settings() {
             <User size={20} />
             Account Information
           </h2>
-          <div className="space-y-3">
-            <div className="flex items-start gap-3">
-              <Mail size={18} className="text-gray-400 mt-0.5" />
-              <div>
-                <div className="text-sm text-gray-400">Email</div>
-                <div className="text-white">{user?.email}</div>
-              </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <User size={18} className="text-gray-400 mt-0.5" />
-              <div>
-                <div className="text-sm text-gray-400">User ID</div>
-                <div className="text-white font-mono text-xs break-all">{user?.id}</div>
-              </div>
+          <div className="flex items-start gap-3">
+            <Mail size={18} className="text-gray-400 mt-0.5" />
+            <div>
+              <div className="text-sm text-gray-400">Email</div>
+              <div className="text-white">{user?.email}</div>
             </div>
           </div>
         </div>
@@ -117,7 +108,8 @@ export function Settings() {
                 <button
                   type="button"
                   onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-300 focus:outline-none"
+                  aria-label="Toggle password visibility"
                 >
                   {showCurrentPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
@@ -142,7 +134,8 @@ export function Settings() {
                 <button
                   type="button"
                   onClick={() => setShowNewPassword(!showNewPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-300 focus:outline-none"
+                  aria-label="Toggle password visibility"
                 >
                   {showNewPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
@@ -168,7 +161,8 @@ export function Settings() {
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-300 focus:outline-none"
+                  aria-label="Toggle password visibility"
                 >
                   {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>

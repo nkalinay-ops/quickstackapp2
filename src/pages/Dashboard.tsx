@@ -52,8 +52,12 @@ export function Dashboard() {
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-1">QuickStack</h1>
+      <div className="mb-4 flex flex-col items-center">
+        <img
+          src="/ChatGPT_Image_Mar_18,_2026,_09_08_29_PM.png"
+          alt="QuickStack"
+          className="w-64 h-auto mb-1"
+        />
         <p className="text-gray-400">Your comic collection at a glance</p>
       </div>
 

@@ -112,6 +112,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
+    // Clear any URL parameters when signing out
+    window.history.replaceState({}, '', window.location.pathname);
   };
 
   const resetPassword = async (email: string) => {

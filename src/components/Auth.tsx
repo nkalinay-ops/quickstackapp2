@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { Eye, EyeOff } from 'lucide-react';
 import { PasswordStrength, validatePassword } from './PasswordStrength';
 
 export function Auth() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [betaKey, setBetaKey] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -72,9 +74,13 @@ export function Auth() {
 
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-8">
-        <div className="text-center">
-          <h1 className="text-4xl font-bold text-white mb-2">QuickStack</h1>
+      <div className="w-full max-w-md space-y-6">
+        <div className="text-center flex flex-col items-center">
+          <img
+            src="/ChatGPT_Image_Mar_18,_2026,_09_08_29_PM.png"
+            alt="QuickStack"
+            className="w-64 h-auto mb-1"
+          />
           <p className="text-gray-400">Track your comic collection</p>
         </div>
 
@@ -98,16 +104,26 @@ export function Auth() {
             <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">
               Password
             </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              minLength={12}
-              className="w-full px-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="••••••••••••"
-            />
+            <div className="relative">
+              <input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={12}
+                className="w-full px-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 pr-12"
+                placeholder="••••••••••••"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-300 focus:outline-none"
+                aria-label="Toggle password visibility"
+              >
+                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+            </div>
             {isSignUp && <PasswordStrength password={password} />}
           </div>
 
