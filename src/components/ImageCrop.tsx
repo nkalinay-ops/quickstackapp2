@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Check, X } from 'lucide-react';
+import { ComicEdgeDetector } from '../utils/edgeDetection';
 
 type Point = { x: number; y: number };
 
@@ -33,133 +34,27 @@ export function ImageCrop({ imageDataUrl, onCropComplete, onCancel }: ImageCropP
     img.src = imageDataUrl;
   }, [imageDataUrl]);
 
-  const detectEdges = (img: HTMLImageElement) => {
+  const detectEdges = async (img: HTMLImageElement) => {
     setDetecting(true);
 
-    const detectionCanvas = document.createElement('canvas');
-    const ctx = detectionCanvas.getContext('2d');
-    if (!ctx) {
+    try {
+      const detector = new ComicEdgeDetector();
+      const result = await detector.detectEdges(img);
+
+      setPoints(result.points);
+
+      console.log(`Edge detection: ${result.method} (confidence: ${(result.confidence * 100).toFixed(1)}%)`);
+    } catch (error) {
+      console.error('Edge detection failed:', error);
+      setPoints([
+        { x: 0.1, y: 0.1 },
+        { x: 0.9, y: 0.1 },
+        { x: 0.9, y: 0.9 },
+        { x: 0.1, y: 0.9 },
+      ]);
+    } finally {
       setDetecting(false);
-      return;
     }
-
-    const maxSize = 800;
-    const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
-    detectionCanvas.width = img.width * scale;
-    detectionCanvas.height = img.height * scale;
-
-    ctx.drawImage(img, 0, 0, detectionCanvas.width, detectionCanvas.height);
-
-    const imageData = ctx.getImageData(0, 0, detectionCanvas.width, detectionCanvas.height);
-    const data = imageData.data;
-    const w = detectionCanvas.width;
-    const h = detectionCanvas.height;
-
-    const gray = new Uint8Array(w * h);
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      gray[i / 4] = 0.299 * r + 0.587 * g + 0.114 * b;
-    }
-
-    const blurred = new Uint8Array(w * h);
-    for (let y = 1; y < h - 1; y++) {
-      for (let x = 1; x < w - 1; x++) {
-        const idx = y * w + x;
-        blurred[idx] = Math.floor(
-          (gray[idx - w - 1] + gray[idx - w] + gray[idx - w + 1] +
-           gray[idx - 1] + gray[idx] + gray[idx + 1] +
-           gray[idx + w - 1] + gray[idx + w] + gray[idx + w + 1]) / 9
-        );
-      }
-    }
-
-    const edges = new Uint8Array(w * h);
-    const threshold = 20;
-
-    for (let y = 1; y < h - 1; y++) {
-      for (let x = 1; x < w - 1; x++) {
-        const idx = y * w + x;
-        const gx =
-          -blurred[idx - w - 1] - 2 * blurred[idx - 1] - blurred[idx + w - 1] +
-          blurred[idx - w + 1] + 2 * blurred[idx + 1] + blurred[idx + w + 1];
-        const gy =
-          -blurred[idx - w - 1] - 2 * blurred[idx - w] - blurred[idx - w + 1] +
-          blurred[idx + w - 1] + 2 * blurred[idx + w] + blurred[idx + w + 1];
-        const magnitude = Math.sqrt(gx * gx + gy * gy);
-        edges[idx] = magnitude > threshold ? 255 : 0;
-      }
-    }
-
-    const margin = 5;
-    let minX = margin;
-    let maxX = w - margin;
-    let minY = margin;
-    let maxY = h - margin;
-
-    const minEdgePercentage = 0.03;
-    const minEdgesVertical = Math.floor((h - 2 * margin) * minEdgePercentage);
-    const minEdgesHorizontal = Math.floor((w - 2 * margin) * minEdgePercentage);
-
-    for (let x = margin; x < w / 2; x++) {
-      let edgeCount = 0;
-      for (let y = margin; y < h - margin; y++) {
-        if (edges[y * w + x] > 0) edgeCount++;
-      }
-      if (edgeCount > minEdgesVertical) {
-        minX = x;
-        break;
-      }
-    }
-
-    for (let x = w - margin; x > w / 2; x--) {
-      let edgeCount = 0;
-      for (let y = margin; y < h - margin; y++) {
-        if (edges[y * w + x] > 0) edgeCount++;
-      }
-      if (edgeCount > minEdgesVertical) {
-        maxX = x;
-        break;
-      }
-    }
-
-    for (let y = margin; y < h / 2; y++) {
-      let edgeCount = 0;
-      for (let x = margin; x < w - margin; x++) {
-        if (edges[y * w + x] > 0) edgeCount++;
-      }
-      if (edgeCount > minEdgesHorizontal) {
-        minY = y;
-        break;
-      }
-    }
-
-    for (let y = h - margin; y > h / 2; y--) {
-      let edgeCount = 0;
-      for (let x = margin; x < w - margin; x++) {
-        if (edges[y * w + x] > 0) edgeCount++;
-      }
-      if (edgeCount > minEdgesHorizontal) {
-        maxY = y;
-        break;
-      }
-    }
-
-    const extensionPadding = 5;
-    minX = Math.max(0, minX - extensionPadding);
-    maxX = Math.min(w, maxX + extensionPadding);
-    minY = Math.max(0, minY - extensionPadding);
-    maxY = Math.min(h, maxY + extensionPadding);
-
-    setPoints([
-      { x: minX / w, y: minY / h },
-      { x: maxX / w, y: minY / h },
-      { x: maxX / w, y: maxY / h },
-      { x: minX / w, y: maxY / h },
-    ]);
-
-    setDetecting(false);
   };
 
   useEffect(() => {
