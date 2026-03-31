@@ -257,7 +257,8 @@ export function AddComic() {
     e.preventDefault();
     if (!user || !title.trim()) return;
 
-    if (issueNumber.trim()) {
+    // Always check for duplicates if we have both title and issue number
+    if (title.trim() && issueNumber.trim()) {
       setCheckingDuplicate(true);
       const duplicate = await checkForDuplicates(title, issueNumber);
       setCheckingDuplicate(false);

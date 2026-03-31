@@ -46,7 +46,7 @@ export default function DuplicateModal({
           <div className="grid md:grid-cols-2 gap-6 mb-6">
             <div className="space-y-3">
               <h3 className="font-semibold text-white flex items-center gap-2">
-                <Copy className="w-5 h-5 text-emerald-400" />
+                <Copy className="w-5 h-5 text-blue-400" />
                 Existing Comic
               </h3>
               {existingComic.color_image_url && (
@@ -63,7 +63,7 @@ export default function DuplicateModal({
                   <p className="text-sm text-gray-400">{existingComic.publisher}</p>
                 )}
                 <div className="pt-2 border-t border-gray-700">
-                  <p className="text-sm font-semibold text-emerald-400">
+                  <p className="text-sm font-semibold text-blue-400">
                     Current Copies: {existingComic.copy_count}
                   </p>
                 </div>
@@ -72,7 +72,7 @@ export default function DuplicateModal({
 
             <div className="space-y-3">
               <h3 className="font-semibold text-white flex items-center gap-2">
-                <Plus className="w-5 h-5 text-emerald-400" />
+                <Plus className="w-5 h-5 text-blue-400" />
                 New Scan
               </h3>
               {newComicImage && (
@@ -94,7 +94,7 @@ export default function DuplicateModal({
             <button
               onClick={onIncreaseCopyCount}
               disabled={isProcessing}
-              className="w-full bg-emerald-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               <Copy className="w-5 h-5" />
               {isProcessing ? 'Processing...' : `Increase to ${existingComic.copy_count + 1} Copies`}
