@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Key, Copy, CheckCircle2, Loader2 } from 'lucide-react';
+import { AlertModal } from '../components/AlertModal';
 
 interface BetaKey {
   id: string;
@@ -20,6 +21,10 @@ export function BetaKeys() {
   const [count, setCount] = useState(1);
   const [notes, setNotes] = useState('');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [alertModal, setAlertModal] = useState<{ isOpen: boolean; title?: string; message: string; type?: 'error' | 'success' | 'info' }>({
+    isOpen: false,
+    message: '',
+  });
 
   const loadKeys = async () => {
     setLoading(true);
@@ -71,7 +76,12 @@ export function BetaKeys() {
       await loadKeys();
     } catch (error) {
       console.error('Error generating keys:', error);
-      alert(error instanceof Error ? error.message : 'Failed to generate keys');
+      setAlertModal({
+        isOpen: true,
+        title: 'Error',
+        message: error instanceof Error ? error.message : 'Failed to generate keys',
+        type: 'error',
+      });
     } finally {
       setGenerating(false);
     }
@@ -255,6 +265,14 @@ export function BetaKeys() {
           </div>
         )}
       </div>
+
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        onClose={() => setAlertModal({ ...alertModal, isOpen: false })}
+        title={alertModal.title}
+        message={alertModal.message}
+        type={alertModal.type}
+      />
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { supabase, Comic } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Search, Trash2, X, Copy } from 'lucide-react';
+import { Search, Trash2, X, Copy, CreditCard as Edit2, Save } from 'lucide-react';
+import { ConfirmModal } from '../components/ConfirmModal';
+import { AlertModal } from '../components/AlertModal';
 
 export function Collection() {
   const { user } = useAuth();
@@ -10,6 +12,14 @@ export function Collection() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedComic, setSelectedComic] = useState<Comic | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedComic, setEditedComic] = useState<Comic | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; comicId: string | null }>({ isOpen: false, comicId: null });
+  const [alertModal, setAlertModal] = useState<{ isOpen: boolean; title?: string; message: string; type?: 'error' | 'success' | 'info' }>({
+    isOpen: false,
+    message: '',
+  });
 
   useEffect(() => {
     if (!user) return;
@@ -51,17 +61,83 @@ export function Collection() {
   };
 
   const deleteComic = async (id: string) => {
-    if (!confirm('Delete this comic from your collection?')) return;
-
     try {
       const { error } = await supabase.from('comics').delete().eq('id', id);
       if (error) throw error;
       setComics(comics.filter((c) => c.id !== id));
     } catch (error) {
       console.error('Error deleting comic:', error);
-      alert('Failed to delete comic');
+      setAlertModal({
+        isOpen: true,
+        title: 'Error',
+        message: 'Failed to delete comic',
+        type: 'error',
+      });
     }
   };
+
+  const handleDeleteClick = (id: string) => {
+    setConfirmModal({ isOpen: true, comicId: id });
+  };
+
+  const handleConfirmDelete = () => {
+    if (confirmModal.comicId) {
+      deleteComic(confirmModal.comicId);
+      if (selectedComic?.id === confirmModal.comicId) {
+        setSelectedComic(null);
+      }
+    }
+  };
+
+  const handleEditClick = () => {
+    if (selectedComic) {
+      setEditedComic({ ...selectedComic });
+      setIsEditing(true);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditedComic(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editedComic) return;
+
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('comics')
+        .update({
+          title: editedComic.title.trim(),
+          issue_number: editedComic.issue_number.trim(),
+          publisher: editedComic.publisher.trim(),
+          year: editedComic.year,
+          condition: editedComic.condition.trim(),
+          notes: editedComic.notes.trim(),
+        })
+        .eq('id', editedComic.id);
+
+      if (error) throw error;
+
+      setSelectedComic(editedComic);
+      setComics(comics.map(c => c.id === editedComic.id ? editedComic : c));
+      setIsEditing(false);
+      setEditedComic(null);
+    } catch (error) {
+      console.error('Error updating comic:', error);
+      setAlertModal({
+        isOpen: true,
+        title: 'Error',
+        message: 'Failed to update comic',
+        type: 'error',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const conditions = ['Mint', 'Near Mint', 'Very Fine', 'Fine', 'Good', 'Fair', 'Poor'];
 
   if (loading) {
     return (
@@ -72,12 +148,18 @@ export function Collection() {
   }
 
   if (selectedComic) {
+    const displayComic = isEditing && editedComic ? editedComic : selectedComic;
+
     return (
       <div className="p-4 max-w-2xl mx-auto">
         <div className="mb-6 flex justify-between items-center">
           <h1 className="text-3xl font-bold">Comic Details</h1>
           <button
-            onClick={() => setSelectedComic(null)}
+            onClick={() => {
+              setSelectedComic(null);
+              setIsEditing(false);
+              setEditedComic(null);
+            }}
             className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
           >
             <X size={24} />
@@ -97,36 +179,83 @@ export function Collection() {
         <div className="bg-gray-900 rounded-lg p-6 border border-gray-800 space-y-4">
           <div>
             <div className="text-sm text-gray-400 mb-1">Title</div>
-            <div className="text-xl font-semibold">{selectedComic.title}</div>
+            {isEditing ? (
+              <input
+                type="text"
+                value={displayComic.title}
+                onChange={(e) => setEditedComic({ ...displayComic, title: e.target.value })}
+                className="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none text-lg"
+              />
+            ) : (
+              <div className="text-xl font-semibold">{displayComic.title}</div>
+            )}
           </div>
 
-          {selectedComic.issue_number && (
-            <div>
-              <div className="text-sm text-gray-400 mb-1">Issue Number</div>
-              <div className="text-lg">#{selectedComic.issue_number}</div>
-            </div>
-          )}
+          <div>
+            <div className="text-sm text-gray-400 mb-1">Issue Number</div>
+            {isEditing ? (
+              <input
+                type="text"
+                value={displayComic.issue_number}
+                onChange={(e) => setEditedComic({ ...displayComic, issue_number: e.target.value })}
+                className="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
+              />
+            ) : (
+              <div className="text-lg">#{displayComic.issue_number}</div>
+            )}
+          </div>
 
-          {selectedComic.publisher && (
-            <div>
-              <div className="text-sm text-gray-400 mb-1">Publisher</div>
-              <div className="text-lg">{selectedComic.publisher}</div>
-            </div>
-          )}
+          <div>
+            <div className="text-sm text-gray-400 mb-1">Publisher</div>
+            {isEditing ? (
+              <input
+                type="text"
+                value={displayComic.publisher}
+                onChange={(e) => setEditedComic({ ...displayComic, publisher: e.target.value })}
+                className="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
+              />
+            ) : (
+              <div className="text-lg">{displayComic.publisher || '-'}</div>
+            )}
+          </div>
 
-          {selectedComic.year && (
-            <div>
-              <div className="text-sm text-gray-400 mb-1">Year</div>
-              <div className="text-lg">{selectedComic.year}</div>
-            </div>
-          )}
+          <div>
+            <div className="text-sm text-gray-400 mb-1">Year</div>
+            {isEditing ? (
+              <input
+                type="number"
+                value={displayComic.year || ''}
+                onChange={(e) => setEditedComic({ ...displayComic, year: e.target.value ? parseInt(e.target.value) : null })}
+                className="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
+              />
+            ) : (
+              <div className="text-lg">{displayComic.year || '-'}</div>
+            )}
+          </div>
 
-          {selectedComic.condition && (
-            <div>
-              <div className="text-sm text-gray-400 mb-1">Condition</div>
-              <div className="text-lg">{selectedComic.condition}</div>
-            </div>
-          )}
+          <div>
+            <div className="text-sm text-gray-400 mb-2">Condition</div>
+            {isEditing ? (
+              <div className="grid grid-cols-4 gap-2">
+                {conditions.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setEditedComic({ ...displayComic, condition: c })}
+                    className={`py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                      displayComic.condition === c
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-800 text-gray-400 border border-gray-700 hover:border-gray-600'
+                    }`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="text-lg">{displayComic.condition || '-'}</div>
+            )}
+          </div>
 
           {selectedComic.copy_count > 1 && (
             <div>
@@ -138,24 +267,59 @@ export function Collection() {
             </div>
           )}
 
-          {selectedComic.notes && (
-            <div>
-              <div className="text-sm text-gray-400 mb-1">Notes</div>
-              <div className="text-lg">{selectedComic.notes}</div>
-            </div>
-          )}
+          <div>
+            <div className="text-sm text-gray-400 mb-1">Notes</div>
+            {isEditing ? (
+              <textarea
+                value={displayComic.notes}
+                onChange={(e) => setEditedComic({ ...displayComic, notes: e.target.value })}
+                rows={3}
+                className="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none resize-none"
+              />
+            ) : (
+              <div className="text-lg">{displayComic.notes || '-'}</div>
+            )}
+          </div>
         </div>
 
-        <button
-          onClick={() => {
-            deleteComic(selectedComic.id);
-            setSelectedComic(null);
-          }}
-          className="w-full mt-6 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
-        >
-          <Trash2 size={20} />
-          Delete Comic
-        </button>
+        <div className="mt-6 space-y-3">
+          {isEditing ? (
+            <>
+              <button
+                onClick={handleSaveEdit}
+                disabled={saving}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                <Save size={20} />
+                {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+              <button
+                onClick={handleCancelEdit}
+                disabled={saving}
+                className="w-full py-3 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={handleEditClick}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                <Edit2 size={20} />
+                Edit Comic
+              </button>
+              <button
+                onClick={() => handleDeleteClick(selectedComic.id)}
+                className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                <Trash2 size={20} />
+                Delete Comic
+              </button>
+            </>
+          )}
+        </div>
       </div>
     );
   }
@@ -239,7 +403,7 @@ export function Collection() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    deleteComic(comic.id);
+                    handleDeleteClick(comic.id);
                   }}
                   className="ml-3 p-2 text-gray-500 hover:text-red-400 transition-colors flex-shrink-0"
                 >
@@ -250,6 +414,25 @@ export function Collection() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ isOpen: false, comicId: null })}
+        onConfirm={handleConfirmDelete}
+        title="Delete Comic"
+        message="Are you sure you want to delete this comic from your collection?"
+        confirmText="Delete"
+        cancelText="Cancel"
+        isDestructive={true}
+      />
+
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        onClose={() => setAlertModal({ ...alertModal, isOpen: false })}
+        title={alertModal.title}
+        message={alertModal.message}
+        type={alertModal.type}
+      />
     </div>
   );
 }

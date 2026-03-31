@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { LogOut, User, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { PasswordStrength, validatePassword } from '../components/PasswordStrength';
+import { ConfirmModal } from '../components/ConfirmModal';
+import { AlertModal } from '../components/AlertModal';
 
 export function Settings() {
   const { user, signOut, updatePassword } = useAuth();
@@ -14,15 +16,32 @@ export function Settings() {
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordError, setPasswordError] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState('');
+  const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; action: 'signout' | null }>({ isOpen: false, action: null });
+  const [alertModal, setAlertModal] = useState<{ isOpen: boolean; title?: string; message: string; type?: 'error' | 'success' | 'info' }>({
+    isOpen: false,
+    message: '',
+  });
 
   const handleSignOut = async () => {
-    if (!confirm('Sign out of QuickStack?')) return;
     try {
       await signOut();
     } catch (error) {
       console.error('Error signing out:', error);
-      alert('Failed to sign out');
+      setAlertModal({
+        isOpen: true,
+        title: 'Error',
+        message: 'Failed to sign out',
+        type: 'error',
+      });
     }
+  };
+
+  const handleSignOutClick = () => {
+    setConfirmModal({ isOpen: true, action: 'signout' });
+  };
+
+  const handleConfirmSignOut = () => {
+    handleSignOut();
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -201,13 +220,32 @@ export function Settings() {
         </div>
 
         <button
-          onClick={handleSignOut}
+          onClick={handleSignOutClick}
           className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
         >
           <LogOut size={20} />
           Sign Out
         </button>
       </div>
+
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ isOpen: false, action: null })}
+        onConfirm={handleConfirmSignOut}
+        title="Sign Out"
+        message="Are you sure you want to sign out of QuickStack?"
+        confirmText="Sign Out"
+        cancelText="Cancel"
+        isDestructive={false}
+      />
+
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        onClose={() => setAlertModal({ ...alertModal, isOpen: false })}
+        title={alertModal.title}
+        message={alertModal.message}
+        type={alertModal.type}
+      />
     </div>
   );
 }

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { supabase, WishlistItem } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Plus, Trash2, CheckCircle } from 'lucide-react';
+import { ConfirmModal } from '../components/ConfirmModal';
+import { AlertModal } from '../components/AlertModal';
 
 export function Wishlist() {
   const { user } = useAuth();
@@ -14,6 +16,16 @@ export function Wishlist() {
     publisher: '',
     priority: 'Medium',
     notes: '',
+  });
+  const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; action: 'delete' | 'acquire' | null; itemId: string | null; item: WishlistItem | null }>({
+    isOpen: false,
+    action: null,
+    itemId: null,
+    item: null,
+  });
+  const [alertModal, setAlertModal] = useState<{ isOpen: boolean; title?: string; message: string; type?: 'error' | 'success' | 'info' }>({
+    isOpen: false,
+    message: '',
   });
 
   useEffect(() => {
@@ -65,26 +77,32 @@ export function Wishlist() {
       loadWishlist();
     } catch (error) {
       console.error('Error adding to wishlist:', error);
-      alert('Failed to add to wishlist');
+      setAlertModal({
+        isOpen: true,
+        title: 'Error',
+        message: 'Failed to add to wishlist',
+        type: 'error',
+      });
     }
   };
 
   const deleteItem = async (id: string) => {
-    if (!confirm('Remove from wishlist?')) return;
-
     try {
       const { error } = await supabase.from('wishlist').delete().eq('id', id);
       if (error) throw error;
       setWishlist(wishlist.filter((item) => item.id !== id));
     } catch (error) {
       console.error('Error deleting item:', error);
-      alert('Failed to remove item');
+      setAlertModal({
+        isOpen: true,
+        title: 'Error',
+        message: 'Failed to remove item',
+        type: 'error',
+      });
     }
   };
 
   const markAsAcquired = async (item: WishlistItem) => {
-    if (!confirm('Move this to your collection?')) return;
-
     try {
       const { error: insertError } = await supabase.from('comics').insert({
         user_id: user!.id,
@@ -102,10 +120,36 @@ export function Wishlist() {
       if (deleteError) throw deleteError;
 
       setWishlist(wishlist.filter((i) => i.id !== item.id));
-      alert('Added to collection!');
+      setAlertModal({
+        isOpen: true,
+        title: 'Success',
+        message: 'Added to collection!',
+        type: 'success',
+      });
     } catch (error) {
       console.error('Error moving to collection:', error);
-      alert('Failed to move to collection');
+      setAlertModal({
+        isOpen: true,
+        title: 'Error',
+        message: 'Failed to move to collection',
+        type: 'error',
+      });
+    }
+  };
+
+  const handleDeleteClick = (id: string) => {
+    setConfirmModal({ isOpen: true, action: 'delete', itemId: id, item: null });
+  };
+
+  const handleAcquiredClick = (item: WishlistItem) => {
+    setConfirmModal({ isOpen: true, action: 'acquire', itemId: item.id, item });
+  };
+
+  const handleConfirmAction = () => {
+    if (confirmModal.action === 'delete' && confirmModal.itemId) {
+      deleteItem(confirmModal.itemId);
+    } else if (confirmModal.action === 'acquire' && confirmModal.item) {
+      markAsAcquired(confirmModal.item);
     }
   };
 
@@ -234,14 +278,14 @@ export function Wishlist() {
                 </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => markAsAcquired(item)}
+                    onClick={() => handleAcquiredClick(item)}
                     className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-1"
                   >
                     <CheckCircle size={16} />
                     Acquired
                   </button>
                   <button
-                    onClick={() => deleteItem(item.id)}
+                    onClick={() => handleDeleteClick(item.id)}
                     className="px-3 py-2 text-gray-500 hover:text-red-400 transition-colors"
                   >
                     <Trash2 size={18} />
@@ -252,6 +296,25 @@ export function Wishlist() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ isOpen: false, action: null, itemId: null, item: null })}
+        onConfirm={handleConfirmAction}
+        title={confirmModal.action === 'delete' ? 'Remove from Wishlist' : 'Move to Collection'}
+        message={confirmModal.action === 'delete' ? 'Are you sure you want to remove this item from your wishlist?' : 'Move this item to your collection?'}
+        confirmText={confirmModal.action === 'delete' ? 'Remove' : 'Move to Collection'}
+        cancelText="Cancel"
+        isDestructive={confirmModal.action === 'delete'}
+      />
+
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        onClose={() => setAlertModal({ ...alertModal, isOpen: false })}
+        title={alertModal.title}
+        message={alertModal.message}
+        type={alertModal.type}
+      />
     </div>
   );
 }

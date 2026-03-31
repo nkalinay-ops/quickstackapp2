@@ -5,6 +5,7 @@ import { CheckCircle2, Plus, Camera, Scan, X } from 'lucide-react';
 import { CameraCapture } from '../components/CameraCapture';
 import { optimizeImageForOCR } from '../utils/imageOptimizer';
 import DuplicateModal from '../components/DuplicateModal';
+import { AlertModal } from '../components/AlertModal';
 
 export function AddComic() {
   const { user } = useAuth();
@@ -22,6 +23,10 @@ export function AddComic() {
   const [duplicateComic, setDuplicateComic] = useState<Comic | null>(null);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
+  const [alertModal, setAlertModal] = useState<{ isOpen: boolean; title?: string; message: string; type?: 'error' | 'success' | 'info' }>({
+    isOpen: false,
+    message: '',
+  });
 
   const checkForDuplicates = async (comicTitle: string, comicIssueNumber: string): Promise<Comic | null> => {
     if (!user || !comicTitle.trim() || !comicIssueNumber.trim()) return null;
@@ -74,7 +79,12 @@ export function AddComic() {
       if (!response.ok) {
         const errorMessage = result.detail || result.error || 'Failed to scan comic';
         console.error('Scan error:', result);
-        alert(`Scanning failed: ${errorMessage}\n\nPlease try again with better lighting or enter details manually.`);
+        setAlertModal({
+          isOpen: true,
+          title: 'Scanning Failed',
+          message: `${errorMessage}\n\nPlease try again with better lighting or enter details manually.`,
+          type: 'error',
+        });
         return;
       }
 
@@ -97,14 +107,29 @@ export function AddComic() {
             setShowDuplicateModal(true);
           }
         } else {
-          alert('Could not extract all details from the image. Please review and fill in any missing information.');
+          setAlertModal({
+            isOpen: true,
+            title: 'Incomplete Scan',
+            message: 'Could not extract all details from the image. Please review and fill in any missing information.',
+            type: 'info',
+          });
         }
       } else {
-        alert('Could not extract comic details. Please enter manually.');
+        setAlertModal({
+          isOpen: true,
+          title: 'Scan Failed',
+          message: 'Could not extract comic details. Please enter manually.',
+          type: 'error',
+        });
       }
     } catch (error) {
       console.error('Error scanning comic:', error);
-      alert('An unexpected error occurred while scanning. Please enter details manually.');
+      setAlertModal({
+        isOpen: true,
+        title: 'Error',
+        message: 'An unexpected error occurred while scanning. Please enter details manually.',
+        type: 'error',
+      });
     } finally {
       setScanning(false);
     }
@@ -230,15 +255,71 @@ export function AddComic() {
       setTimeout(() => setSuccess(false), 3000);
     } catch (error) {
       console.error('Error updating copy count:', error);
-      alert('Failed to update copy count');
+      setAlertModal({
+        isOpen: true,
+        title: 'Error',
+        message: 'Failed to update copy count',
+        type: 'error',
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAddAsSeparate = () => {
+  const handleAddAsSeparate = async () => {
     setShowDuplicateModal(false);
     setDuplicateComic(null);
+
+    // Proceed with adding the comic as a separate entry
+    setLoading(true);
+    setSuccess(false);
+
+    try {
+      let colorImageUrl = null;
+      let bwImageUrl = null;
+
+      if (capturedImage) {
+        const { colorUrl, bwUrl } = await uploadImages();
+        colorImageUrl = colorUrl;
+        bwImageUrl = bwUrl;
+      }
+
+      const { error } = await supabase.from('comics').insert({
+        user_id: user!.id,
+        title: title.trim(),
+        issue_number: issueNumber.trim(),
+        publisher: publisher.trim(),
+        year: year ? parseInt(year) : null,
+        condition: condition.trim(),
+        notes: notes.trim(),
+        color_image_url: colorImageUrl,
+        bw_image_url: bwImageUrl,
+        copy_count: 1,
+      });
+
+      if (error) throw error;
+
+      setSuccess(true);
+      setTitle('');
+      setIssueNumber('');
+      setPublisher('');
+      setYear('');
+      setCondition('');
+      setNotes('');
+      setCapturedImage(null);
+
+      setTimeout(() => setSuccess(false), 2000);
+    } catch (error) {
+      console.error('Error adding comic:', error);
+      setAlertModal({
+        isOpen: true,
+        title: 'Error',
+        message: 'Failed to add comic',
+        type: 'error',
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDiscardScan = () => {
@@ -310,7 +391,12 @@ export function AddComic() {
       setTimeout(() => setSuccess(false), 2000);
     } catch (error) {
       console.error('Error adding comic:', error);
-      alert('Failed to add comic');
+      setAlertModal({
+        isOpen: true,
+        title: 'Error',
+        message: 'Failed to add comic',
+        type: 'error',
+      });
     } finally {
       setLoading(false);
     }
@@ -517,6 +603,14 @@ export function AddComic() {
           isProcessing={loading}
         />
       )}
+
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        onClose={() => setAlertModal({ ...alertModal, isOpen: false })}
+        title={alertModal.title}
+        message={alertModal.message}
+        type={alertModal.type}
+      />
     </div>
   );
 }

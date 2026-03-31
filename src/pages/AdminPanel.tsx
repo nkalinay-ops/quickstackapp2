@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Shield, Users, Key, ChevronDown, ChevronUp, XCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { PromptModal } from '../components/PromptModal';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 interface UserTermination {
   user_id: string;
@@ -42,6 +44,12 @@ export function AdminPanel() {
   const [activeTab, setActiveTab] = useState<'users' | 'beta-keys'>('users');
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [promptModal, setPromptModal] = useState<{ isOpen: boolean; userId: string | null }>({ isOpen: false, userId: null });
+  const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; userId: string | null; reason: string }>({
+    isOpen: false,
+    userId: null,
+    reason: '',
+  });
 
   const loadUsers = async () => {
     try {
@@ -167,14 +175,7 @@ export function AdminPanel() {
     }
   };
 
-  const handleTerminateUser = async (userId: string) => {
-    const reason = prompt('Enter termination reason (optional):');
-    if (reason === null) return;
-
-    if (!confirm('Are you sure you want to terminate this user\'s access? This action cannot be undone.')) {
-      return;
-    }
-
+  const handleTerminateUser = async (userId: string, reason: string) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
@@ -209,6 +210,22 @@ export function AdminPanel() {
     } catch (err) {
       console.error('Terminate error:', err);
       setError(err instanceof Error ? err.message : 'Failed to terminate user');
+    }
+  };
+
+  const handleTerminateClick = (userId: string) => {
+    setPromptModal({ isOpen: true, userId });
+  };
+
+  const handlePromptSubmit = (reason: string) => {
+    if (promptModal.userId) {
+      setConfirmModal({ isOpen: true, userId: promptModal.userId, reason });
+    }
+  };
+
+  const handleConfirmTerminate = () => {
+    if (confirmModal.userId) {
+      handleTerminateUser(confirmModal.userId, confirmModal.reason);
     }
   };
 
@@ -449,7 +466,7 @@ export function AdminPanel() {
                             </button>
                           )}
                           <button
-                            onClick={() => handleTerminateUser(user.id)}
+                            onClick={() => handleTerminateClick(user.id)}
                             className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors flex items-center gap-2"
                           >
                             <XCircle className="w-4 h-4" />
@@ -517,6 +534,28 @@ export function AdminPanel() {
           )}
         </div>
       </div>
+
+      <PromptModal
+        isOpen={promptModal.isOpen}
+        onClose={() => setPromptModal({ isOpen: false, userId: null })}
+        onConfirm={handlePromptSubmit}
+        title="Terminate User Access"
+        message="Enter termination reason (optional):"
+        placeholder="e.g., Violation of terms of service"
+        confirmText="Next"
+        cancelText="Cancel"
+      />
+
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ isOpen: false, userId: null, reason: '' })}
+        onConfirm={handleConfirmTerminate}
+        title="Confirm Termination"
+        message="Are you sure you want to terminate this user's access? This action cannot be undone."
+        confirmText="Terminate Access"
+        cancelText="Cancel"
+        isDestructive={true}
+      />
     </div>
   );
 }
