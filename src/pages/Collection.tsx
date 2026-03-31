@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase, Comic } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Search, Trash2, X, Copy, CreditCard as Edit2, Save } from 'lucide-react';
+import { Search, Trash2, X, Copy, CreditCard as Edit2, Save, Plus, Minus } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { AlertModal } from '../components/AlertModal';
 
@@ -137,6 +137,64 @@ export function Collection() {
     }
   };
 
+  const handleIncrementCopy = async (comicId: string) => {
+    try {
+      const comic = comics.find(c => c.id === comicId);
+      if (!comic) return;
+
+      const newCount = comic.copy_count + 1;
+      const { error } = await supabase
+        .from('comics')
+        .update({ copy_count: newCount })
+        .eq('id', comicId);
+
+      if (error) throw error;
+
+      const updatedComic = { ...comic, copy_count: newCount };
+      setComics(comics.map(c => c.id === comicId ? updatedComic : c));
+      if (selectedComic?.id === comicId) {
+        setSelectedComic(updatedComic);
+      }
+    } catch (error) {
+      console.error('Error updating copy count:', error);
+      setAlertModal({
+        isOpen: true,
+        title: 'Error',
+        message: 'Failed to update copy count',
+        type: 'error',
+      });
+    }
+  };
+
+  const handleDecrementCopy = async (comicId: string) => {
+    try {
+      const comic = comics.find(c => c.id === comicId);
+      if (!comic || comic.copy_count <= 1) return;
+
+      const newCount = comic.copy_count - 1;
+      const { error } = await supabase
+        .from('comics')
+        .update({ copy_count: newCount })
+        .eq('id', comicId);
+
+      if (error) throw error;
+
+      const updatedComic = { ...comic, copy_count: newCount };
+      setComics(comics.map(c => c.id === comicId ? updatedComic : c));
+      if (selectedComic?.id === comicId) {
+        setSelectedComic(updatedComic);
+      }
+    } catch (error) {
+      console.error('Error updating copy count:', error);
+      setAlertModal({
+        isOpen: true,
+        title: 'Error',
+        message: 'Failed to update copy count',
+        type: 'error',
+      });
+    }
+  };
+
   const conditions = ['Mint', 'Near Mint', 'Very Fine', 'Fine', 'Good', 'Fair', 'Poor'];
 
   if (loading) {
@@ -257,15 +315,29 @@ export function Collection() {
             )}
           </div>
 
-          {selectedComic.copy_count > 1 && (
-            <div>
-              <div className="text-sm text-gray-400 mb-1">Copies Owned</div>
-              <div className="text-lg flex items-center gap-2">
-                <Copy size={20} className="text-blue-500" />
-                <span className="font-semibold text-blue-400">{selectedComic.copy_count} copies</span>
+          <div>
+            <div className="text-sm text-gray-400 mb-2">Copies Owned</div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => handleDecrementCopy(selectedComic.id)}
+                disabled={selectedComic.copy_count <= 1 || isEditing}
+                className="p-2 bg-gray-800 text-white rounded-lg border border-gray-700 hover:bg-gray-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <Minus size={20} />
+              </button>
+              <div className="flex items-center gap-2">
+                <Copy size={20} className="text-blue-400" />
+                <span className="text-2xl font-semibold text-blue-400">{selectedComic.copy_count}</span>
               </div>
+              <button
+                onClick={() => handleIncrementCopy(selectedComic.id)}
+                disabled={isEditing}
+                className="p-2 bg-gray-800 text-white rounded-lg border border-gray-700 hover:bg-gray-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <Plus size={20} />
+              </button>
             </div>
-          )}
+          </div>
 
           <div>
             <div className="text-sm text-gray-400 mb-1">Notes</div>
@@ -320,6 +392,25 @@ export function Collection() {
             </>
           )}
         </div>
+
+        <ConfirmModal
+          isOpen={confirmModal.isOpen}
+          onClose={() => setConfirmModal({ isOpen: false, comicId: null })}
+          onConfirm={handleConfirmDelete}
+          title="Delete Comic"
+          message="Are you sure you want to delete this comic from your collection?"
+          confirmText="Delete"
+          cancelText="Cancel"
+          isDestructive={true}
+        />
+
+        <AlertModal
+          isOpen={alertModal.isOpen}
+          onClose={() => setAlertModal({ ...alertModal, isOpen: false })}
+          title={alertModal.title}
+          message={alertModal.message}
+          type={alertModal.type}
+        />
       </div>
     );
   }
