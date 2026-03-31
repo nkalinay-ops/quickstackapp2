@@ -261,6 +261,19 @@ export function AddComic() {
     setSuccess(false);
 
     try {
+      if (title.trim() && issueNumber.trim()) {
+        setCheckingDuplicate(true);
+        const duplicate = await checkForDuplicates(title, issueNumber);
+        setCheckingDuplicate(false);
+
+        if (duplicate) {
+          setDuplicateComic(duplicate);
+          setShowDuplicateModal(true);
+          setLoading(false);
+          return;
+        }
+      }
+
       let colorImageUrl = null;
       let bwImageUrl = null;
 
