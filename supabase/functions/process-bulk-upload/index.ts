@@ -69,6 +69,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const authHeader = req.headers.get("Authorization");
 
@@ -85,7 +86,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Create service client for database operations
+    // Create service client for database operations (bypasses RLS)
     const serviceClient = createClient(supabaseUrl, supabaseServiceKey, {
       auth: {
         autoRefreshToken: false,
@@ -93,11 +94,11 @@ Deno.serve(async (req: Request) => {
       },
     });
 
-    // Extract token and create auth client
+    // Extract token and create user client for auth verification
     const token = authHeader.replace("Bearer ", "");
     console.log("Verifying token, length:", token.length);
 
-    const userClient = createClient(supabaseUrl, supabaseServiceKey, {
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
       global: {
         headers: {
           Authorization: authHeader,
