@@ -243,10 +243,23 @@ export function BulkUpload() {
         throw new Error('Failed to create upload job');
       }
 
+      // Get user session for authentication
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError || !session) {
+        // Mark job as failed
+        await supabase
+          .from('bulk_upload_jobs')
+          .update({ status: 'failed' })
+          .eq('id', job.id);
+        throw new Error('Authentication failed. Please log in again.');
+      }
+
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-bulk-upload`;
       const headers = {
-        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        'Authorization': `Bearer ${session.access_token}`,
         'Content-Type': 'application/json',
+        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
       };
 
       const response = await fetch(apiUrl, {
@@ -259,14 +272,27 @@ export function BulkUpload() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to process upload');
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.error || errorData.details || 'Failed to process upload';
+
+        // Mark job as failed
+        await supabase
+          .from('bulk_upload_jobs')
+          .update({
+            status: 'failed',
+            validation_errors: errorData
+          })
+          .eq('id', job.id);
+
+        throw new Error(errorMessage);
       }
 
       setSelectedFile(null);
       loadJobs();
     } catch (error) {
       console.error('Upload error:', error);
-      alert('Failed to upload file. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to upload file. Please try again.';
+      alert(errorMessage);
     } finally {
       setUploading(false);
     }
