@@ -310,7 +310,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // Mark job as completed
-    await supabaseClient
+    await serviceClient
       .from('bulk_upload_jobs')
       .update({
         status: 'completed',
