@@ -9,13 +9,14 @@ import { Wishlist } from './pages/Wishlist';
 import { Settings } from './pages/Settings';
 import { BetaKeys } from './pages/BetaKeys';
 import { AdminPanel } from './pages/AdminPanel';
+import { BulkUpload } from './pages/BulkUpload';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
 import { TestPasswordReset } from './pages/TestPasswordReset';
 
 function AppContent() {
   const { user, loading } = useAuth();
-  const [currentPage, setCurrentPage] = useState<'auth' | 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'forgot-password' | 'reset-password' | 'test-password-reset'>('dashboard');
+  const [currentPage, setCurrentPage] = useState<'auth' | 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload' | 'forgot-password' | 'reset-password' | 'test-password-reset'>('dashboard');
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -83,6 +84,7 @@ function AppContent() {
       {currentPage === 'settings' && <Settings />}
       {currentPage === 'beta-keys' && <BetaKeys />}
       {currentPage === 'admin' && <AdminPanel />}
+      {currentPage === 'bulk-upload' && <BulkUpload />}
     </Layout>
   );
 }

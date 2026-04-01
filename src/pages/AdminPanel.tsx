@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, Users, Key, ChevronDown, ChevronUp, XCircle } from 'lucide-react';
+import { Shield, Users, Key, ChevronDown, ChevronUp, XCircle, Upload } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { PromptModal } from '../components/PromptModal';
@@ -19,6 +19,8 @@ interface UserProfile {
   beta_key_redeemed: string | null;
   is_admin: boolean;
   admin_granted_at: string | null;
+  can_bulk_upload: boolean;
+  bulk_upload_granted_at: string | null;
   created_at: string;
   last_sign_in_at: string | null;
   termination: UserTermination | null;
@@ -41,7 +43,7 @@ export function AdminPanel() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [betaKeys, setBetaKeys] = useState<BetaKey[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'users' | 'beta-keys'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'beta-keys' | 'bulk-upload'>('users');
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [promptModal, setPromptModal] = useState<{ isOpen: boolean; userId: string | null }>({ isOpen: false, userId: null });
@@ -257,12 +259,41 @@ export function AdminPanel() {
     }
   };
 
+  const handleToggleBulkUploadPermission = async (userId: string, grant: boolean) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-bulk-upload-permission`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ target_user_id: userId, grant }),
+        }
+      );
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to update permission');
+      }
+
+      await loadUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update permission');
+    }
+  };
+
   const stats = {
     totalUsers: users.length,
     betaUsers: users.filter(u => u.is_beta_user).length,
     adminUsers: users.filter(u => u.is_admin).length,
     activeBetaKeys: betaKeys.filter(k => k.is_active && !k.redeemed_at).length,
     terminatedUsers: users.filter(u => u.termination).length,
+    bulkUploadUsers: users.filter(u => u.can_bulk_upload).length,
   };
 
   if (loading) {
@@ -355,6 +386,16 @@ export function AdminPanel() {
             }`}
           >
             Beta Keys
+          </button>
+          <button
+            onClick={() => setActiveTab('bulk-upload')}
+            className={`flex-1 px-6 py-4 font-medium transition-colors ${
+              activeTab === 'bulk-upload'
+                ? 'text-blue-400 border-b-2 border-blue-400'
+                : 'text-gray-400 hover:text-gray-300'
+            }`}
+          >
+            Bulk Upload
           </button>
         </div>
 
@@ -529,6 +570,66 @@ export function AdminPanel() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'bulk-upload' && (
+            <div className="space-y-4">
+              <div className="bg-gray-900 border border-gray-700 rounded-lg p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <Upload className="w-6 h-6 text-blue-400" />
+                  <h2 className="text-xl font-semibold">Bulk Upload Permissions</h2>
+                </div>
+                <p className="text-gray-400 mb-4">
+                  Grant users permission to upload multiple comics at once using spreadsheets.
+                </p>
+                <p className="text-sm text-gray-500">
+                  {stats.bulkUploadUsers} user{stats.bulkUploadUsers !== 1 ? 's' : ''} currently have bulk upload access
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                {users
+                  .filter(u => !u.termination)
+                  .map((user) => (
+                    <div
+                      key={user.id}
+                      className="bg-gray-900 rounded-lg p-4 border border-gray-700"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <p className="text-white font-medium">{user.email || 'No email'}</p>
+                          <div className="flex gap-2 mt-1">
+                            {user.is_beta_user && (
+                              <span className="px-2 py-0.5 bg-green-500/10 text-green-400 rounded text-xs border border-green-500/20">
+                                Beta
+                              </span>
+                            )}
+                            {user.is_admin && (
+                              <span className="px-2 py-0.5 bg-orange-500/10 text-orange-400 rounded text-xs border border-orange-500/20">
+                                Admin
+                              </span>
+                            )}
+                          </div>
+                          {user.can_bulk_upload && user.bulk_upload_granted_at && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              Granted: {new Date(user.bulk_upload_granted_at).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={user.can_bulk_upload}
+                            onChange={(e) => handleToggleBulkUploadPermission(user.id, e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
+                      </div>
+                    </div>
+                  ))}
               </div>
             </div>
           )}

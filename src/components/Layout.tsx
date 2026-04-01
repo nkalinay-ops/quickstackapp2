@@ -1,15 +1,35 @@
-import { ReactNode } from 'react';
-import { Home, Library, Plus, Heart, Settings, Shield } from 'lucide-react';
+import { ReactNode, useState, useEffect } from 'react';
+import { Home, Library, Plus, Heart, Settings, Shield, Upload } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
 
 type LayoutProps = {
   children: ReactNode;
-  currentPage: 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin';
-  onNavigate: (page: 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin') => void;
+  currentPage: 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload';
+  onNavigate: (page: 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload') => void;
 };
 
 export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
+  const [canBulkUpload, setCanBulkUpload] = useState(false);
+
+  useEffect(() => {
+    const checkBulkUploadPermission = async () => {
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('can_bulk_upload')
+        .eq('id', user.id)
+        .single();
+
+      if (!error && data) {
+        setCanBulkUpload(data.can_bulk_upload);
+      }
+    };
+
+    checkBulkUploadPermission();
+  }, [user]);
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">
@@ -18,7 +38,7 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
       </main>
 
       <nav className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800">
-        <div className={`flex justify-around items-center h-16 max-w-2xl mx-auto ${isAdmin ? 'px-2' : ''}`}>
+        <div className={`flex justify-around items-center h-16 max-w-2xl mx-auto ${(isAdmin || canBulkUpload) ? 'px-2' : ''}`}>
           <NavButton
             icon={<Home size={24} />}
             label="Dashboard"
@@ -38,6 +58,14 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
             onClick={() => onNavigate('add')}
             primary
           />
+          {canBulkUpload && (
+            <NavButton
+              icon={<Upload size={24} />}
+              label="Bulk"
+              active={currentPage === 'bulk-upload'}
+              onClick={() => onNavigate('bulk-upload')}
+            />
+          )}
           <NavButton
             icon={<Heart size={24} />}
             label="Wishlist"
