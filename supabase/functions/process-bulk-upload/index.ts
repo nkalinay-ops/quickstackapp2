@@ -1,45 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
-
-const isOriginAllowed = (origin: string | null): boolean => {
-  if (!origin) return false;
-
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-
-  const allowedOrigins = [
-    supabaseUrl,
-    "http://localhost:5173",
-    "http://localhost:3000",
-  ].filter(Boolean);
-
-  if (allowedOrigins.includes(origin)) {
-    return true;
-  }
-
-  if (origin.includes('localhost') ||
-      origin.includes('127.0.0.1') ||
-      origin.includes('webcontainer')) {
-    return true;
-  }
-
-  if (origin.includes('.vercel.app')) {
-    return true;
-  }
-
-  return false;
-};
-
-const getCorsHeaders = (origin: string | null) => {
-  const isAllowed = isOriginAllowed(origin);
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-
-  return {
-    "Access-Control-Allow-Origin": isAllowed && origin ? origin : (supabaseUrl || "*"),
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
-    "Access-Control-Allow-Credentials": "true",
-  };
-};
+import { requireUser, getCorsHeaders } from "../_shared/auth.ts";
 
 interface ComicRow {
   title: string;
@@ -68,68 +29,10 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const authHeader = req.headers.get("Authorization");
-
-    console.log("Request headers:", {
-      hasAuth: !!authHeader,
-      origin: req.headers.get("origin"),
-    });
-
-    if (!authHeader) {
-      console.error("Missing authorization header");
-      return new Response(
-        JSON.stringify({ error: "Missing authorization header" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Create service client for database operations (bypasses RLS)
-    const serviceClient = createClient(supabaseUrl, supabaseServiceKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    });
-
-    // Extract token and create user client for auth verification
-    const token = authHeader.replace("Bearer ", "");
-    console.log("Verifying token, length:", token.length);
-
-    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: {
-        headers: {
-          Authorization: authHeader,
-        },
-      },
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    });
-
-    const { data: { user }, error: authError } = await userClient.auth.getUser();
-
-    console.log("Auth verification result:", {
-      hasUser: !!user,
-      userId: user?.id,
-      error: authError?.message,
-    });
-
-    if (authError || !user) {
-      console.error("Auth verification failed:", authError);
-      return new Response(
-        JSON.stringify({
-          error: "Unauthorized",
-          details: authError?.message || "Invalid or expired token",
-        }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
+    // Use the strict two-client auth pattern
+    const { user, userClient } = await requireUser(req);
     const userId = user.id;
+
     console.log("User authenticated:", userId);
 
     const { job_id, rows }: ProcessRequest = await req.json();
@@ -141,16 +44,30 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Check if user has bulk upload permission
-    const { data: hasPermission, error: permError } = await serviceClient
-      .rpc('has_bulk_upload_permission', { user_uuid: userId });
+    // Check if user has bulk upload permission using user-scoped client
+    const { data: profile, error: permError } = await userClient
+      .from('user_profiles')
+      .select('can_bulk_upload')
+      .eq('id', userId)
+      .maybeSingle();
 
-    if (permError || !hasPermission) {
+    if (permError || !profile?.can_bulk_upload) {
       return new Response(
         JSON.stringify({ error: "You do not have permission to perform bulk uploads" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // NOW create service client for bulk operations (bypasses RLS)
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    const serviceClient = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
 
     // Update job status to processing
     await serviceClient

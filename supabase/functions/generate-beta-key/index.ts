@@ -1,26 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
-
-const getAllowedOrigins = () => {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  return [
-    supabaseUrl,
-    "http://localhost:5173",
-    "http://localhost:3000",
-  ].filter(Boolean);
-};
-
-const getCorsHeaders = (origin: string | null) => {
-  const allowedOrigins = getAllowedOrigins();
-  const isAllowed = origin && allowedOrigins.includes(origin);
-
-  return {
-    "Access-Control-Allow-Origin": isAllowed ? origin : allowedOrigins[0] || "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
-    "Access-Control-Allow-Credentials": "true",
-  };
-};
+import { requireAdmin, getCorsHeaders } from "../_shared/auth.ts";
 
 interface GenerateBetaKeyRequest {
   count?: number;
@@ -68,54 +48,8 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error("Missing Supabase environment variables");
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "Missing authorization header" }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    const token = authHeader.replace("Bearer ", "");
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    const { data: profile, error: profileError } = await supabase
-      .from("user_profiles")
-      .select("is_admin")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (profileError || !profile?.is_admin) {
-      return new Response(
-        JSON.stringify({ error: "Forbidden: Admin access required" }),
-        {
-          status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
+    // Use the strict two-client auth pattern
+    const { user, serviceClient } = await requireAdmin(req);
 
     const { count = 1, createdBy, notes }: GenerateBetaKeyRequest = await req.json();
 
@@ -139,7 +73,7 @@ Deno.serve(async (req: Request) => {
       let attempts = 0;
 
       while (!isUnique && attempts < 10) {
-        const { data: existingKey } = await supabase
+        const { data: existingKey } = await serviceClient
           .from("beta_keys")
           .select("id")
           .eq("key_code", keyCode)
@@ -163,7 +97,7 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      const { data: newKey, error: insertError } = await supabase
+      const { data: newKey, error: insertError } = await serviceClient
         .from("beta_keys")
         .insert({
           key_code: keyCode,
