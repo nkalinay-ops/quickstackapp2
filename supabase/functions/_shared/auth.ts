@@ -10,6 +10,98 @@ export const corsHeaders = {
 };
 
 /**
+ * Standard error response type
+ */
+export interface ErrorResponse {
+  error: string;
+  details?: string;
+}
+
+/**
+ * Creates a standardized JSON error response with proper CORS headers
+ *
+ * @param message - The error message to return
+ * @param status - HTTP status code (default: 500)
+ * @param details - Optional additional error details
+ * @returns Response object with JSON error and CORS headers
+ */
+export function createErrorResponse(
+  message: string,
+  status: number = 500,
+  details?: string
+): Response {
+  const body: ErrorResponse = { error: message };
+  if (details) {
+    body.details = details;
+  }
+
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+/**
+ * Creates a standardized JSON success response with proper CORS headers
+ *
+ * @param data - The data to return
+ * @param status - HTTP status code (default: 200)
+ * @returns Response object with JSON data and CORS headers
+ */
+export function createSuccessResponse(data: unknown, status: number = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+/**
+ * Wraps an Edge Function handler with standardized error handling.
+ * Properly catches Response objects thrown by auth helpers and converts
+ * unexpected errors into proper JSON responses.
+ *
+ * IMPORTANT: This wrapper ensures that:
+ * 1. Response objects from auth helpers are returned directly
+ * 2. Error objects are converted to JSON responses
+ * 3. Unknown errors are logged and converted to 500 responses
+ * 4. All responses include proper CORS headers
+ *
+ * @param handler - The async function to wrap
+ * @returns Wrapped handler with error handling
+ *
+ * @example
+ * ```typescript
+ * Deno.serve(
+ *   wrapHandler(async (req) => {
+ *     const { userClient } = await requireAuth(req);
+ *     return createSuccessResponse({ message: "Success" });
+ *   })
+ * );
+ * ```
+ */
+export function wrapHandler(
+  handler: (req: Request) => Promise<Response>
+): (req: Request) => Promise<Response> {
+  return async (req: Request) => {
+    try {
+      return await handler(req);
+    } catch (error) {
+      if (error instanceof Response) {
+        return error;
+      }
+
+      console.error("Unexpected error in Edge Function:", error);
+
+      if (error instanceof Error) {
+        return createErrorResponse(error.message, 500);
+      }
+
+      return createErrorResponse("Internal server error", 500);
+    }
+  };
+}
+
+/**
  * Enhanced CORS headers with credentials support for admin functions
  */
 export const getCorsHeaders = (origin: string | null) => {
@@ -56,6 +148,18 @@ export interface AuthResult {
  * Admin authentication result with service client
  */
 export interface AdminAuthResult extends AuthResult {
+  serviceClient: SupabaseClient;
+}
+
+/**
+ * Standard authentication result with both user and service clients
+ */
+export interface AuthWithServiceResult {
+  user: {
+    id: string;
+    email?: string;
+  };
+  userClient: SupabaseClient;
   serviceClient: SupabaseClient;
 }
 
@@ -115,6 +219,41 @@ export async function requireUser(req: Request): Promise<AuthResult> {
   return {
     user,
     userClient,
+  };
+}
+
+/**
+ * Validates the incoming request has a valid JWT token and returns both clients.
+ * This is a convenience function that provides both user and service clients
+ * for authenticated operations that may need elevated privileges.
+ *
+ * Use this when:
+ * - User needs to perform operations on their own data (use userClient)
+ * - May occasionally need service-level operations (use serviceClient)
+ *
+ * Note: This does NOT check for admin privileges. Use requireAdmin() for that.
+ *
+ * @param req - The incoming request
+ * @returns User, user-scoped client, and service client
+ * @throws Response with 401 if authentication fails
+ */
+export async function requireAuth(req: Request): Promise<AuthWithServiceResult> {
+  const { user, userClient } = await requireUser(req);
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+  const serviceClient = createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+
+  return {
+    user,
+    userClient,
+    serviceClient,
   };
 }
 
