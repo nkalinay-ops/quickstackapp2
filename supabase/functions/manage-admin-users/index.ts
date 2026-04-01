@@ -174,6 +174,9 @@ Deno.serve(async (req: Request) => {
           is_admin,
           admin_granted_at,
           admin_granted_by,
+          can_bulk_upload,
+          bulk_upload_granted_at,
+          bulk_upload_granted_by,
           created_at,
           updated_at
         `)
