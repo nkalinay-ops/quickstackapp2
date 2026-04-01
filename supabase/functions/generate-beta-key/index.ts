@@ -138,6 +138,10 @@ Deno.serve(async (req: Request) => {
       }
     );
   } catch (error) {
+    if (error instanceof Response) {
+      return error;
+    }
+
     console.error("Error in generate-beta-key function:", error);
     return new Response(
       JSON.stringify({

@@ -56,6 +56,10 @@ Deno.serve(async (req: Request) => {
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
+    if (error instanceof Response) {
+      return error;
+    }
+
     console.error('Error managing bulk upload permission:', error);
     return new Response(
       JSON.stringify({
