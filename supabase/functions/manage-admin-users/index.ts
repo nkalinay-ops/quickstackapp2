@@ -18,81 +18,8 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // When verifyJWT is enabled, Supabase provides the user in the request context
-    // We still need to check admin status and create clients
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: "Missing authorization header" }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-    // Create user-scoped client
-    const userClient = (await import("npm:@supabase/supabase-js@2.57.4")).createClient(
-      supabaseUrl,
-      supabaseAnonKey,
-      {
-        global: {
-          headers: {
-            Authorization: authHeader,
-          },
-        },
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      }
-    );
-
-    // Get user from JWT
-    const { data: { user }, error: authError } = await userClient.auth.getUser();
-
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        {
-          status: 401,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    // Check admin status
-    const { data: profile, error: profileError } = await userClient
-      .from("user_profiles")
-      .select("is_admin")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (profileError || !profile || !profile.is_admin) {
-      return new Response(
-        JSON.stringify({ error: "Forbidden: Admin access required" }),
-        {
-          status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    // Create service client for privileged operations
-    const serviceClient = (await import("npm:@supabase/supabase-js@2.57.4")).createClient(
-      supabaseUrl,
-      supabaseServiceKey,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      }
-    );
+    // Use the requireAdmin helper - this handles all auth and admin checking
+    const { user, serviceClient } = await requireAdmin(req);
 
     const body: AdminActionRequest = await req.json();
 
