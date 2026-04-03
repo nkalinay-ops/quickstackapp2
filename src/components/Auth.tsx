@@ -82,7 +82,6 @@ export function Auth() {
             alt="QuickStack"
             className="w-64 h-auto mb-1"
           />
-          <p className="text-gray-400">Track your comic collection</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 bg-gray-900 p-6 rounded-lg">
