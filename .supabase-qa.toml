@@ -1,7 +1,7 @@
 # Supabase QA Environment Configuration
 # This file is used by deployment scripts to connect to the QA project
 
-project_id = "YOUR_QA_PROJECT_ID"
+project_id = "fsqmyefqbjndilrwluep"
 
 [api]
 enabled = true
