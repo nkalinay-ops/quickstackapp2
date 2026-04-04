@@ -8,7 +8,15 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json"
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "db:migration:new": "bash scripts/create-migration.sh",
+    "db:migration:verify": "bash scripts/verify-migrations.sh",
+    "db:backup:qa": "bash scripts/backup-db.sh qa",
+    "db:backup:prod": "bash scripts/backup-db.sh prod",
+    "db:deploy:dry-run": "bash scripts/deploy-migrations.sh --dry-run",
+    "db:deploy:prod": "bash scripts/deploy-migrations.sh",
+    "db:rollback:qa": "bash scripts/rollback.sh qa",
+    "db:rollback:prod": "bash scripts/rollback.sh prod"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
@@ -28,6 +36,7 @@
     "eslint-plugin-react-refresh": "^0.4.11",
     "globals": "^15.9.0",
     "postcss": "^8.4.35",
+    "supabase": "^2.84.10",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.3.0",

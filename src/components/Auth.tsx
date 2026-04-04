@@ -39,6 +39,7 @@ export function Auth() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           },
           body: JSON.stringify({
             keyCode: betaKey,
@@ -81,7 +82,6 @@ export function Auth() {
             alt="QuickStack"
             className="w-64 h-auto mb-1"
           />
-          <p className="text-gray-400">Track your comic collection</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 bg-gray-900 p-6 rounded-lg">
