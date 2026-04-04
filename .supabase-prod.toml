@@ -1,7 +1,7 @@
 # Supabase Production Environment Configuration
 # This file is used by deployment scripts to connect to the production project
 
-project_id = "fsqmyefqbjndilrwluep"
+project_id = "ucmyiukzkeybuslvfhqx"
 
 [api]
 enabled = true
