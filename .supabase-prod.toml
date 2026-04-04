@@ -1,0 +1,21 @@
+# Supabase Production Environment Configuration
+# This file is used by deployment scripts to connect to the production project
+
+project_id = "YOUR_PROD_PROJECT_ID"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+# Note: Set SUPABASE_ACCESS_TOKEN environment variable for authentication
+# You can get this from: https://app.supabase.com/account/tokens
