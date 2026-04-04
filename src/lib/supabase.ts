@@ -18,6 +18,7 @@ export type Comic = {
   year: number | null;
   condition: string;
   notes: string;
+  freeform_text: string;
   color_image_url: string | null;
   bw_image_url: string | null;
   copy_count: number;
