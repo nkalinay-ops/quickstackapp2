@@ -18,7 +18,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // Use the strict two-client auth pattern
+    // Use the requireAdmin helper - this handles all auth and admin checking
     const { user, serviceClient } = await requireAdmin(req);
 
     const body: AdminActionRequest = await req.json();
