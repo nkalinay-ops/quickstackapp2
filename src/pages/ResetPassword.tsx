@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { PasswordStrength, validatePassword } from '../components/PasswordStrength';
-import { CheckCircle, Eye, EyeOff } from 'lucide-react';
+import { CheckCircle, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export function ResetPassword() {
   const [newPassword, setNewPassword] = useState('');
@@ -11,20 +12,112 @@ export function ResetPassword() {
   const [success, setSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const { updatePassword } = useAuth();
+  const [verifyingSession, setVerifyingSession] = useState(true);
+  const [hasValidSession, setHasValidSession] = useState(false);
+  const { updatePassword, user } = useAuth();
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const errorParam = params.get('error');
-    const errorDescription = params.get('error_description');
+    let mounted = true;
 
-    if (errorParam) {
-      if (errorDescription?.includes('expired') || errorDescription?.includes('invalid')) {
-        setError('This password reset link has expired or is invalid. Please request a new one.');
-      } else {
-        setError(errorDescription || 'An error occurred. Please try again.');
+    const verifyPasswordResetSession = async () => {
+      console.log('Verifying password reset session...');
+
+      const params = new URLSearchParams(window.location.search);
+      const errorParam = params.get('error');
+      const errorDescription = params.get('error_description');
+
+      if (errorParam) {
+        if (errorDescription?.includes('expired') || errorDescription?.includes('invalid')) {
+          setError('This password reset link has expired or is invalid. Please request a new one.');
+        } else {
+          setError(errorDescription || 'An error occurred. Please try again.');
+        }
+        setVerifyingSession(false);
+        setHasValidSession(false);
+        return;
       }
-    }
+
+      const hash = window.location.hash;
+      console.log('URL hash:', hash ? 'present' : 'not present');
+
+      if (hash && hash.includes('access_token')) {
+        console.log('Found access token in hash, attempting to set session...');
+        const hashParams = new URLSearchParams(hash.substring(1));
+        const accessToken = hashParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token');
+        const type = hashParams.get('type');
+
+        if (accessToken && refreshToken && type === 'recovery') {
+          try {
+            const { data, error: sessionError } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+
+            if (sessionError) {
+              console.error('Error setting session:', sessionError);
+              setError('Failed to establish session. Please request a new password reset link.');
+              setHasValidSession(false);
+            } else if (data?.session) {
+              console.log('Session established successfully');
+              setHasValidSession(true);
+              window.history.replaceState({}, '', window.location.pathname + '?page=reset-password');
+            }
+          } catch (err) {
+            console.error('Exception setting session:', err);
+            setError('An unexpected error occurred. Please request a new password reset link.');
+            setHasValidSession(false);
+          }
+        }
+      } else {
+        const { data: { session } } = await supabase.auth.getSession();
+        console.log('Current session:', session ? 'exists' : 'not found');
+
+        if (session?.user) {
+          console.log('Valid session found');
+          setHasValidSession(true);
+        } else {
+          console.log('No valid session found');
+          setError('No active session found. Please click the password reset link from your email.');
+          setHasValidSession(false);
+        }
+      }
+
+      if (mounted) {
+        setVerifyingSession(false);
+      }
+    };
+
+    const authListener = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state change event:', event);
+
+      if (event === 'PASSWORD_RECOVERY') {
+        console.log('Password recovery event detected');
+        setHasValidSession(true);
+        setVerifyingSession(false);
+      } else if (event === 'SIGNED_IN' && session) {
+        console.log('User signed in');
+        setHasValidSession(true);
+        setVerifyingSession(false);
+      }
+    });
+
+    verifyPasswordResetSession();
+
+    const timeout = setTimeout(() => {
+      if (mounted && verifyingSession) {
+        console.log('Session verification timeout');
+        setError('Session verification timed out. Please request a new password reset link.');
+        setVerifyingSession(false);
+        setHasValidSession(false);
+      }
+    }, 10000);
+
+    return () => {
+      mounted = false;
+      clearTimeout(timeout);
+      authListener.data.subscription.unsubscribe();
+    };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -58,6 +151,46 @@ export function ResetPassword() {
       setLoading(false);
     }
   };
+
+  if (verifyingSession) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+        <div className="w-full max-w-md space-y-8">
+          <div className="text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-900 rounded-full mb-4 animate-pulse">
+              <div className="w-8 h-8 border-4 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+            <h1 className="text-3xl font-bold text-white mb-2">Verifying your link...</h1>
+            <p className="text-gray-400 mb-6">
+              Please wait while we verify your password reset link.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!hasValidSession && error) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+        <div className="w-full max-w-md space-y-8">
+          <div className="text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-red-900 rounded-full mb-4">
+              <AlertCircle className="text-red-400" size={32} />
+            </div>
+            <h1 className="text-3xl font-bold text-white mb-2">Invalid or Expired Link</h1>
+            <p className="text-gray-400 mb-6">{error}</p>
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'forgot-password' }))}
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+            >
+              Request New Password Reset
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (success) {
     return (
