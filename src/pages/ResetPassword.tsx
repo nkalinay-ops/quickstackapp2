@@ -18,16 +18,31 @@ export function ResetPassword() {
 
   useEffect(() => {
     let mounted = true;
+    let timeoutId: NodeJS.Timeout;
+
+    const authListener = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state change event:', event);
+
+      if (!mounted) return;
+
+      if (event === 'PASSWORD_RECOVERY') {
+        console.log('Password recovery event detected');
+        if (mounted) {
+          setHasValidSession(true);
+          setVerifyingSession(false);
+          window.history.replaceState({}, '', window.location.pathname + '?page=reset-password');
+        }
+      } else if (event === 'SIGNED_IN' && session) {
+        console.log('User signed in during password reset');
+        if (mounted) {
+          setHasValidSession(true);
+          setVerifyingSession(false);
+        }
+      }
+    });
 
     const verifyPasswordResetSession = async () => {
       console.log('Verifying password reset session...');
-
-      // First, sign out any existing session to ensure clean state
-      const { data: { session: existingSession } } = await supabase.auth.getSession();
-      if (existingSession) {
-        console.log('Signing out existing session...');
-        await supabase.auth.signOut();
-      }
 
       const params = new URLSearchParams(window.location.search);
       const errorParam = params.get('error');
@@ -48,76 +63,56 @@ export function ResetPassword() {
       console.log('URL hash:', hash ? 'present' : 'not present');
 
       if (hash && hash.includes('access_token')) {
-        console.log('Found access token in hash, attempting to set session...');
-        const hashParams = new URLSearchParams(hash.substring(1));
-        const accessToken = hashParams.get('access_token');
-        const refreshToken = hashParams.get('refresh_token');
-        const type = hashParams.get('type');
+        console.log('Found access token in hash, processing...');
+        await new Promise(resolve => setTimeout(resolve, 500));
 
-        if (accessToken && refreshToken && type === 'recovery') {
-          try {
-            const { data, error: sessionError } = await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken,
-            });
-
-            if (sessionError) {
-              console.error('Error setting session:', sessionError);
-              setError('Failed to establish session. Please request a new password reset link.');
-              setHasValidSession(false);
-            } else if (data?.session) {
-              console.log('Session established successfully');
-              setHasValidSession(true);
-              window.history.replaceState({}, '', window.location.pathname + '?page=reset-password');
-            }
-          } catch (err) {
-            console.error('Exception setting session:', err);
-            setError('An unexpected error occurred. Please request a new password reset link.');
-            setHasValidSession(false);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          console.log('Session established from hash');
+          if (mounted) {
+            setHasValidSession(true);
+            setVerifyingSession(false);
+            window.history.replaceState({}, '', window.location.pathname + '?page=reset-password');
           }
         }
       } else {
-        console.log('No hash with access token found');
-        setError('No password reset token found. Please click the password reset link from your email.');
-        setHasValidSession(false);
-      }
+        const { data: { session } } = await supabase.auth.getSession();
+        console.log('Current session:', session ? 'exists' : 'not found');
 
-      if (mounted) {
-        setVerifyingSession(false);
+        if (session?.user) {
+          console.log('Valid session found');
+          if (mounted) {
+            setHasValidSession(true);
+            setVerifyingSession(false);
+          }
+        } else {
+          console.log('No valid session found');
+          if (mounted) {
+            setError('No password reset token found. Please click the password reset link from your email.');
+            setHasValidSession(false);
+            setVerifyingSession(false);
+          }
+        }
       }
     };
 
-    const authListener = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state change event:', event);
-
-      if (event === 'PASSWORD_RECOVERY') {
-        console.log('Password recovery event detected');
-        setHasValidSession(true);
-        setVerifyingSession(false);
-      } else if (event === 'SIGNED_IN' && session) {
-        console.log('User signed in');
-        setHasValidSession(true);
-        setVerifyingSession(false);
-      }
-    });
-
     verifyPasswordResetSession();
 
-    const timeout = setTimeout(() => {
+    timeoutId = setTimeout(() => {
       if (mounted && verifyingSession) {
         console.log('Session verification timeout');
         setError('Session verification timed out. Please request a new password reset link.');
         setVerifyingSession(false);
         setHasValidSession(false);
       }
-    }, 10000);
+    }, 15000);
 
     return () => {
       mounted = false;
-      clearTimeout(timeout);
+      clearTimeout(timeoutId);
       authListener.data.subscription.unsubscribe();
     };
-  }, []);
+  }, [verifyingSession]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
