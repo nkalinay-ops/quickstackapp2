@@ -365,20 +365,6 @@ export function Collection() {
               <div className="text-lg">{displayComic.notes || '-'}</div>
             )}
           </div>
-
-          <div>
-            <div className="text-sm text-gray-400 mb-1">Free-form Text</div>
-            {isEditing ? (
-              <textarea
-                value={displayComic.freeform_text}
-                onChange={(e) => setEditedComic({ ...displayComic, freeform_text: e.target.value })}
-                rows={4}
-                className="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none resize-none"
-              />
-            ) : (
-              <div className="text-lg whitespace-pre-wrap">{displayComic.freeform_text || '-'}</div>
-            )}
-          </div>
         </div>
 
         <div className="mt-6 space-y-3">
