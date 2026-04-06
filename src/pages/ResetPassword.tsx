@@ -22,6 +22,13 @@ export function ResetPassword() {
     const verifyPasswordResetSession = async () => {
       console.log('Verifying password reset session...');
 
+      // First, sign out any existing session to ensure clean state
+      const { data: { session: existingSession } } = await supabase.auth.getSession();
+      if (existingSession) {
+        console.log('Signing out existing session...');
+        await supabase.auth.signOut();
+      }
+
       const params = new URLSearchParams(window.location.search);
       const errorParam = params.get('error');
       const errorDescription = params.get('error_description');
@@ -70,17 +77,9 @@ export function ResetPassword() {
           }
         }
       } else {
-        const { data: { session } } = await supabase.auth.getSession();
-        console.log('Current session:', session ? 'exists' : 'not found');
-
-        if (session?.user) {
-          console.log('Valid session found');
-          setHasValidSession(true);
-        } else {
-          console.log('No valid session found');
-          setError('No active session found. Please click the password reset link from your email.');
-          setHasValidSession(false);
-        }
+        console.log('No hash with access token found');
+        setError('No password reset token found. Please click the password reset link from your email.');
+        setHasValidSession(false);
       }
 
       if (mounted) {
