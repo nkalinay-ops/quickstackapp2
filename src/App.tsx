@@ -22,19 +22,22 @@ function AppContent() {
     const params = new URLSearchParams(window.location.search);
     const page = params.get('page');
 
-    // If user is logged out, only allow specific pages
+    // Check for password reset/forgot password pages first (regardless of auth state)
+    if (page === 'reset-password') {
+      setCurrentPage('reset-password');
+      return;
+    } else if (page === 'test-password-reset') {
+      setCurrentPage('test-password-reset');
+      return;
+    } else if (page === 'forgot-password') {
+      setCurrentPage('forgot-password');
+      return;
+    }
+
+    // If user is logged out, show auth page
     if (!user) {
-      if (page === 'reset-password') {
-        setCurrentPage('reset-password');
-      } else if (page === 'test-password-reset') {
-        setCurrentPage('test-password-reset');
-      } else if (page === 'forgot-password') {
-        setCurrentPage('forgot-password');
-      } else {
-        // Clear any URL parameters and go to auth page
-        window.history.replaceState({}, '', window.location.pathname);
-        setCurrentPage('auth');
-      }
+      window.history.replaceState({}, '', window.location.pathname);
+      setCurrentPage('auth');
     } else {
       // User is logged in, go to dashboard
       window.history.replaceState({}, '', window.location.pathname);
