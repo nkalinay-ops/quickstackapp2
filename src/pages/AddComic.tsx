@@ -15,7 +15,6 @@ export function AddComic() {
   const [year, setYear] = useState('');
   const [condition, setCondition] = useState('');
   const [notes, setNotes] = useState('');
-  const [freeformText, setFreeformText] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
@@ -250,7 +249,6 @@ export function AddComic() {
       setYear('');
       setCondition('');
       setNotes('');
-      setFreeformText('');
       setCapturedImage(null);
       setDuplicateComic(null);
 
@@ -294,7 +292,6 @@ export function AddComic() {
         year: year ? parseInt(year) : null,
         condition: condition.trim(),
         notes: notes.trim(),
-        freeform_text: freeformText.trim(),
         color_image_url: colorImageUrl,
         bw_image_url: bwImageUrl,
         copy_count: 1,
@@ -309,7 +306,6 @@ export function AddComic() {
       setYear('');
       setCondition('');
       setNotes('');
-      setFreeformText('');
       setCapturedImage(null);
 
       setTimeout(() => setSuccess(false), 2000);
@@ -335,7 +331,6 @@ export function AddComic() {
     setYear('');
     setCondition('');
     setNotes('');
-    setFreeformText('');
     setCapturedImage(null);
   };
 
@@ -377,7 +372,6 @@ export function AddComic() {
         year: year ? parseInt(year) : null,
         condition: condition.trim(),
         notes: notes.trim(),
-        freeform_text: freeformText.trim(),
         color_image_url: colorImageUrl,
         bw_image_url: bwImageUrl,
         copy_count: 1,
@@ -392,7 +386,6 @@ export function AddComic() {
       setYear('');
       setCondition('');
       setNotes('');
-      setFreeformText('');
       setCapturedImage(null);
 
       setTimeout(() => setSuccess(false), 2000);
@@ -576,20 +569,6 @@ export function AddComic() {
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Any additional details..."
             rows={3}
-            className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-          />
-        </div>
-
-        <div>
-          <label htmlFor="freeformText" className="block text-sm font-medium text-gray-300 mb-1">
-            Free-form Text
-          </label>
-          <textarea
-            id="freeformText"
-            value={freeformText}
-            onChange={(e) => setFreeformText(e.target.value)}
-            placeholder="Any custom information..."
-            rows={4}
             className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
           />
         </div>
