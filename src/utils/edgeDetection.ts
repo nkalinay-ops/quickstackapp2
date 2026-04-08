@@ -45,8 +45,10 @@ export class ComicEdgeDetector {
     const gray = this.toGrayscale(imageData);
     const preprocessed = this.preprocessImage(gray, w, h);
 
-    let result: DetectionResult | null = null;
+    // Initialize result with safe default to ensure confidence is always accessible
+    let result = this.getDefaultResult();
 
+    // Stage 1: Try Canny-Contour detection (highest potential confidence)
     if (performance.now() - startTime < 2000) {
       result = this.tryCannyContourDetection(preprocessed, w, h);
       if (result.confidence >= 0.7) {
@@ -54,6 +56,7 @@ export class ComicEdgeDetector {
       }
     }
 
+    // Stage 2: Try Hough-Line detection if first stage wasn't confident enough
     if (performance.now() - startTime < 2500) {
       const houghResult = this.tryHoughLineDetection(preprocessed, w, h);
       if (houghResult.confidence > result.confidence) {
@@ -64,6 +67,7 @@ export class ComicEdgeDetector {
       }
     }
 
+    // Stage 3: Try Advanced-Contour analysis as fallback method
     if (performance.now() - startTime < 3000) {
       const advancedResult = this.tryAdvancedContourAnalysis(preprocessed, w, h);
       if (advancedResult.confidence > result.confidence) {
@@ -71,6 +75,7 @@ export class ComicEdgeDetector {
       }
     }
 
+    // Return best result if above threshold, otherwise return default
     return result.confidence >= this.CONFIDENCE_THRESHOLD
       ? result
       : this.getDefaultResult();
