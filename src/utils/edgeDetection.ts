@@ -19,6 +19,12 @@ export class ComicEdgeDetector {
   private readonly MAX_DETECTION_SIZE = 800;
   private readonly CONFIDENCE_THRESHOLD = 0.5;
 
+  // Validation thresholds for hardening geometry detection
+  private readonly MIN_CORNER_DISTANCE_RATIO = 0.03; // 3% of image diagonal
+  private readonly MIN_AREA_RATIO = 0.05; // 5% of image area
+  private readonly MIN_UNIQUE_POINTS = 4; // minimum distinct points for valid geometry
+  private readonly POINT_DUPLICATE_THRESHOLD = 2.0; // pixels - points closer than this are duplicates
+
   async detectEdges(img: HTMLImageElement): Promise<DetectionResult> {
     const startTime = performance.now();
 
@@ -193,11 +199,17 @@ export class ComicEdgeDetector {
       .map(contour => this.approximateRectangle(contour, w, h))
       .filter(rect => rect !== null);
 
-    if (rectangles.length === 0) {
+    // Filter out degenerate quadrilaterals before scoring
+    const validRectangles = rectangles.filter(rect =>
+      rect !== null && this.isValidQuadrilateral(rect, w, h)
+    );
+
+    if (validRectangles.length === 0) {
+      console.debug('Rejected all Canny rectangles: none passed validation');
       return this.getDefaultResult();
     }
 
-    const scored = rectangles.map(rect => ({
+    const scored = validRectangles.map(rect => ({
       rect,
       score: this.scoreRectangle(rect, w, h, edges)
     }));
@@ -205,6 +217,7 @@ export class ComicEdgeDetector {
     scored.sort((a, b) => b.score - a.score);
     const best = scored[0];
 
+    // Normalize from pixel space to [0,1] range only at final return
     return {
       points: this.normalizePoints(best.rect, w, h),
       confidence: Math.min(best.score, 0.95),
@@ -462,7 +475,13 @@ export class ComicEdgeDetector {
             const orderedBoundary = this.extractOrderedBoundary(componentPixels, edges, w, h);
 
             if (orderedBoundary.length > 30) {
-              contours.push(orderedBoundary);
+              // Reject degenerate contours with insufficient unique points
+              const uniqueCount = this.countUniquePoints(orderedBoundary, this.POINT_DUPLICATE_THRESHOLD);
+              if (uniqueCount >= this.MIN_UNIQUE_POINTS) {
+                contours.push(orderedBoundary);
+              } else {
+                console.debug(`Rejected contour: only ${uniqueCount} unique points (need ${this.MIN_UNIQUE_POINTS})`);
+              }
             }
           }
         }
@@ -514,6 +533,15 @@ export class ComicEdgeDetector {
       }
     }
 
+    // Filter degenerate component with duplicate points
+    if (componentPixels.length > 0) {
+      const uniqueCount = this.countUniquePoints(componentPixels, this.POINT_DUPLICATE_THRESHOLD);
+      if (uniqueCount < this.MIN_UNIQUE_POINTS) {
+        console.debug(`Rejected component: only ${uniqueCount} unique points`);
+        return [];
+      }
+    }
+
     return componentPixels;
   }
 
@@ -538,12 +566,26 @@ export class ComicEdgeDetector {
       return [];
     }
 
+    // Reject boundary with insufficient distinct points
+    const uniqueCount = this.countUniquePoints(boundaryPixels, this.POINT_DUPLICATE_THRESHOLD);
+    if (uniqueCount < this.MIN_UNIQUE_POINTS) {
+      console.debug(`Rejected boundary: only ${uniqueCount} unique points before tracing`);
+      return [];
+    }
+
     // Phase 3: Order boundary pixels using chain tracing
     const ordered = this.traceContour(boundaryPixels, edges, w, h);
 
     // If chain tracing fails or produces too few points, fall back to angle-based sorting
     if (ordered.length < boundaryPixels.length * 0.5) {
       return this.sortBoundaryByAngle(boundaryPixels);
+    }
+
+    // Validate ordered boundary has unique points
+    const orderedUniqueCount = this.countUniquePoints(ordered, this.POINT_DUPLICATE_THRESHOLD);
+    if (orderedUniqueCount < this.MIN_UNIQUE_POINTS) {
+      console.debug(`Rejected boundary: only ${orderedUniqueCount} unique points after tracing`);
+      return [];
     }
 
     return ordered;
@@ -588,7 +630,7 @@ export class ComicEdgeDetector {
    */
   private traceContour(
     boundaryPixels: Point[],
-    edges: Uint8Array,
+    _edges: Uint8Array,
     w: number,
     h: number
   ): Point[] {
@@ -703,16 +745,40 @@ export class ComicEdgeDetector {
   }
 
   private approximateRectangle(contour: Point[], w: number, h: number): Point[] | null {
+    // All operations in pixel space until final normalization
     if (contour.length < 4) return null;
+
+    // Validate input contour has sufficient unique points
+    const uniqueCount = this.countUniquePoints(contour, this.POINT_DUPLICATE_THRESHOLD);
+    if (uniqueCount < this.MIN_UNIQUE_POINTS) {
+      console.debug(`Rejected contour for approximation: only ${uniqueCount} unique points`);
+      return null;
+    }
 
     const epsilon = 0.02 * this.contourPerimeter(contour);
     const approx = this.douglasPeucker(contour, epsilon);
 
     if (approx.length !== 4) {
-      return this.findBestQuadrilateral(contour);
+      return this.findBestQuadrilateral(contour, w, h);
     }
 
-    return this.orderPoints(approx);
+    // Verify Douglas-Peucker produced distinct corners
+    const diagonal = Math.sqrt(w * w + h * h);
+    const minCornerDistance = this.MIN_CORNER_DISTANCE_RATIO * diagonal;
+    if (!this.hasFourDistinctPoints(approx, minCornerDistance)) {
+      console.debug('Rejected Douglas-Peucker result: duplicate corners detected');
+      return this.findBestQuadrilateral(contour, w, h);
+    }
+
+    const ordered = this.orderPoints(approx);
+
+    // Reject degenerate rectangles with duplicate corners or insufficient area
+    if (!this.isValidQuadrilateral(ordered, w, h)) {
+      console.debug('Rejected rectangle: failed validation (duplicate corners or insufficient area)');
+      return null;
+    }
+
+    return ordered;
   }
 
   private contourPerimeter(contour: Point[]): number {
@@ -763,7 +829,7 @@ export class ComicEdgeDetector {
     return numerator / Math.sqrt(lenSq);
   }
 
-  private findBestQuadrilateral(contour: Point[]): Point[] | null {
+  private findBestQuadrilateral(contour: Point[], w: number, h: number): Point[] | null {
     if (contour.length < 4) return null;
 
     const minX = contour.reduce((min, p) => Math.min(min, p.x), Infinity);
@@ -795,10 +861,22 @@ export class ComicEdgeDetector {
       return dist < closestDist ? p : closest;
     });
 
-    return [topLeft, topRight, bottomRight, bottomLeft];
+    const quad = [topLeft, topRight, bottomRight, bottomLeft];
+
+    // Validate quadrilateral has four distinct corners and minimum area
+    if (!this.isValidQuadrilateral(quad, w, h)) {
+      console.debug('Rejected best quadrilateral: duplicate corners or insufficient area');
+      return null;
+    }
+
+    return quad;
   }
 
   private orderPoints(points: Point[]): Point[] {
+    if (points.length !== 4) {
+      return points;
+    }
+
     const sorted = [...points];
 
     sorted.sort((a, b) => (a.x + a.y) - (b.x + b.y));
@@ -808,7 +886,18 @@ export class ComicEdgeDetector {
     const remaining = [sorted[1], sorted[2]];
     remaining.sort((a, b) => (a.y - a.x) - (b.y - b.x));
 
-    return [topLeft, remaining[0], bottomRight, remaining[1]];
+    const ordered = [topLeft, remaining[0], bottomRight, remaining[1]];
+
+    // Ensure ordering preserves distinct corners
+    for (let i = 0; i < ordered.length; i++) {
+      for (let j = i + 1; j < ordered.length; j++) {
+        if (this.pointDistance(ordered[i], ordered[j]) < this.POINT_DUPLICATE_THRESHOLD) {
+          console.debug('Warning: orderPoints produced near-duplicate corners');
+        }
+      }
+    }
+
+    return ordered;
   }
 
   private tryHoughLineDetection(img: ImageData2D, w: number, h: number): DetectionResult {
@@ -825,8 +914,15 @@ export class ComicEdgeDetector {
       return this.getDefaultResult();
     }
 
+    // Validate rectangle before using it
+    if (!this.isValidQuadrilateral(rectangle, w, h)) {
+      console.debug('Rejected Hough result: failed final validation');
+      return this.getDefaultResult();
+    }
+
     const confidence = Math.min(0.85, 0.5 + (lines.length / 20) * 0.35);
 
+    // Final conversion to normalized coordinates
     return {
       points: this.normalizePoints(rectangle, w, h),
       confidence,
@@ -908,12 +1004,20 @@ export class ComicEdgeDetector {
       return null;
     }
 
-    return [
+    const rect = [
       { x: Math.max(0, Math.min(w, topLeft.x)), y: Math.max(0, Math.min(h, topLeft.y)) },
       { x: Math.max(0, Math.min(w, topRight.x)), y: Math.max(0, Math.min(h, topRight.y)) },
       { x: Math.max(0, Math.min(w, bottomRight.x)), y: Math.max(0, Math.min(h, bottomRight.y)) },
       { x: Math.max(0, Math.min(w, bottomLeft.x)), y: Math.max(0, Math.min(h, bottomLeft.y)) }
     ];
+
+    // Validate Hough line intersections form valid quadrilateral
+    if (!this.isValidQuadrilateral(rect, w, h)) {
+      console.debug('Rejected Hough rectangle: invalid geometry (duplicate corners or insufficient area)');
+      return null;
+    }
+
+    return rect;
   }
 
   private lineIntersection(
@@ -1000,8 +1104,15 @@ export class ComicEdgeDetector {
       { x: minX, y: maxY }
     ];
 
+    // Validate scan-based rectangle meets geometric requirements
+    if (!this.isValidQuadrilateral(rect, w, h)) {
+      console.debug('Rejected scan rectangle: failed validation (duplicate corners or insufficient area)');
+      return this.getDefaultResult();
+    }
+
     const confidence = this.scoreRectangle(rect, w, h, edges);
 
+    // Convert validated pixel coordinates to normalized space
     return {
       points: this.normalizePoints(rect, w, h),
       confidence: Math.min(confidence, 0.75),
@@ -1088,5 +1199,89 @@ export class ComicEdgeDetector {
       confidence: 0.3,
       method: 'Default'
     };
+  }
+
+  // ========== Validation Helper Methods ==========
+
+  /**
+   * Calculates Euclidean distance between two points.
+   */
+  private pointDistance(p1: Point, p2: Point): number {
+    return Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+  }
+
+  /**
+   * Counts the number of spatially distinct points in an array.
+   * Points closer than minDistance are considered duplicates.
+   */
+  private countUniquePoints(points: Point[], minDistance: number): number {
+    if (points.length === 0) return 0;
+
+    const unique: Point[] = [];
+
+    for (const point of points) {
+      let isDuplicate = false;
+      for (const uniquePoint of unique) {
+        if (this.pointDistance(point, uniquePoint) < minDistance) {
+          isDuplicate = true;
+          break;
+        }
+      }
+      if (!isDuplicate) {
+        unique.push(point);
+      }
+    }
+
+    return unique.length;
+  }
+
+  /**
+   * Verifies that a point array contains exactly 4 spatially distinct points.
+   * Used to validate quadrilaterals have non-duplicate corners.
+   */
+  private hasFourDistinctPoints(points: Point[], minDistance: number): boolean {
+    if (points.length !== 4) return false;
+    return this.countUniquePoints(points, minDistance) === 4;
+  }
+
+  /**
+   * Checks if a quadrilateral has sufficient area relative to image size.
+   * Rejects extremely small or collapsed quadrilaterals.
+   */
+  private hasMinimumArea(points: Point[], w: number, h: number): boolean {
+    const area = this.rectangleArea(points);
+    const imageArea = w * h;
+    const areaRatio = area / imageArea;
+    return areaRatio >= this.MIN_AREA_RATIO;
+  }
+
+  /**
+   * Comprehensive validation for quadrilateral geometry.
+   * Ensures points are distinct, area is sufficient, and geometry is valid.
+   */
+  private isValidQuadrilateral(points: Point[], w: number, h: number): boolean {
+    if (points.length !== 4) return false;
+
+    // Check corners are spatially distinct (3% of diagonal minimum)
+    const diagonal = Math.sqrt(w * w + h * h);
+    const minCornerDistance = this.MIN_CORNER_DISTANCE_RATIO * diagonal;
+
+    if (!this.hasFourDistinctPoints(points, minCornerDistance)) {
+      return false;
+    }
+
+    // Check minimum area (5% of image area)
+    if (!this.hasMinimumArea(points, w, h)) {
+      return false;
+    }
+
+    // Verify all points are within image bounds
+    for (const p of points) {
+      if (p.x < 0 || p.x > w || p.y < 0 || p.y > h) {
+        return false;
+      }
+    }
+
+    return true;
   }
 }
