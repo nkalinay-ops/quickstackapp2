@@ -702,121 +702,14 @@ export class ComicEdgeDetector {
     return sorted;
   }
 
-  /**
-   * Computes the convex hull of a set of points using Graham's Scan algorithm.
-   *
-   * The convex hull is the smallest convex polygon that contains all input points.
-   * This is crucial for comic edge detection because:
-   * - Noisy contours often have concave irregularities from image artifacts
-   * - The convex hull removes these irregularities, keeping only the outer boundary
-   * - This creates a cleaner polygon for quadrilateral approximation
-   * - It effectively filters out noise while preserving the overall shape
-   *
-   * Algorithm: Graham's Scan (O(n log n))
-   * 1. Find the bottommost point (or leftmost if tie)
-   * 2. Sort all other points by polar angle with respect to the anchor
-   * 3. Traverse points, maintaining a stack of hull vertices
-   * 4. Use cross product to determine when to pop points (right turns are removed)
-   *
-   * @param points Input points to compute convex hull from
-   * @returns Array of points forming the convex hull in counter-clockwise order
-   */
-  private computeConvexHull(points: Point[]): Point[] {
-    if (points.length < 3) return [...points];
-
-    // Find the anchor point: bottommost point, leftmost if tie
-    let anchor = points[0];
-    for (const p of points) {
-      if (p.y > anchor.y || (p.y === anchor.y && p.x < anchor.x)) {
-        anchor = p;
-      }
-    }
-
-    // Sort points by polar angle with respect to anchor
-    // Points with same angle are sorted by distance from anchor
-    const sortedPoints = points
-      .filter(p => p !== anchor)
-      .sort((a, b) => {
-        const angleA = Math.atan2(a.y - anchor.y, a.x - anchor.x);
-        const angleB = Math.atan2(b.y - anchor.y, b.x - anchor.x);
-
-        if (Math.abs(angleA - angleB) < 1e-9) {
-          // Same angle: sort by distance from anchor (closer first)
-          const distA = this.pointDistanceSquared(anchor, a);
-          const distB = this.pointDistanceSquared(anchor, b);
-          return distA - distB;
-        }
-
-        return angleA - angleB;
-      });
-
-    // Build convex hull using Graham's Scan
-    const hull: Point[] = [anchor];
-
-    for (const point of sortedPoints) {
-      // Remove points that would create a right turn (non-convex)
-      while (hull.length > 1 &&
-             this.crossProduct(hull[hull.length - 2], hull[hull.length - 1], point) <= 0) {
-        hull.pop();
-      }
-      hull.push(point);
-    }
-
-    return hull;
-  }
-
-  /**
-   * Computes the 2D cross product of vectors OA and OB.
-   * Returns positive if OAB makes a counter-clockwise turn,
-   * negative if clockwise, and zero if collinear.
-   */
-  private crossProduct(o: Point, a: Point, b: Point): number {
-    return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-  }
-
-  /**
-   * Computes the squared distance between two points.
-   * Squared distance is used to avoid expensive sqrt operations when only comparing distances.
-   */
-  private pointDistanceSquared(a: Point, b: Point): number {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    return dx * dx + dy * dy;
-  }
-
-  /**
-   * Approximates a contour as a rectangle using convex hull processing followed by polygon simplification.
-   *
-   * Pipeline:
-   * 1. Compute convex hull to simplify noisy contours (removes concavities and internal noise)
-   * 2. Apply Douglas-Peucker algorithm to find 4-point approximation
-   * 3. Fallback to corner-finding if approximation doesn't yield exactly 4 points
-   *
-   * The convex hull preprocessing stabilizes rectangle fitting by:
-   * - Eliminating noisy internal points that can confuse polygon simplification
-   * - Creating a clean outer boundary that better represents the true comic edge
-   * - Reducing the search space for quadrilateral detection
-   */
   private approximateRectangle(contour: Point[], w: number, h: number): Point[] | null {
     if (contour.length < 4) return null;
 
-    // For contours with sufficient points, first compute convex hull to remove noise
-    // This creates a cleaner outer boundary before attempting quadrilateral fitting
-    let processedContour = contour;
-    if (contour.length > 10) {
-      processedContour = this.computeConvexHull(contour);
-
-      // If convex hull reduced to less than 4 points, use original contour
-      if (processedContour.length < 4) {
-        processedContour = contour;
-      }
-    }
-
-    const epsilon = 0.02 * this.contourPerimeter(processedContour);
-    const approx = this.douglasPeucker(processedContour, epsilon);
+    const epsilon = 0.02 * this.contourPerimeter(contour);
+    const approx = this.douglasPeucker(contour, epsilon);
 
     if (approx.length !== 4) {
-      return this.findBestQuadrilateral(processedContour);
+      return this.findBestQuadrilateral(contour);
     }
 
     return this.orderPoints(approx);
