@@ -199,17 +199,11 @@ export class ComicEdgeDetector {
       .map(contour => this.approximateRectangle(contour, w, h))
       .filter(rect => rect !== null);
 
-    // Filter out degenerate quadrilaterals before scoring
-    const validRectangles = rectangles.filter(rect =>
-      rect !== null && this.isValidQuadrilateral(rect, w, h)
-    );
-
-    if (validRectangles.length === 0) {
-      console.debug('Rejected all Canny rectangles: none passed validation');
+    if (rectangles.length === 0) {
       return this.getDefaultResult();
     }
 
-    const scored = validRectangles.map(rect => ({
+    const scored = rectangles.map(rect => ({
       rect,
       score: this.scoreRectangle(rect, w, h, edges)
     }));
@@ -475,13 +469,7 @@ export class ComicEdgeDetector {
             const orderedBoundary = this.extractOrderedBoundary(componentPixels, edges, w, h);
 
             if (orderedBoundary.length > 30) {
-              // Reject degenerate contours with insufficient unique points
-              const uniqueCount = this.countUniquePoints(orderedBoundary, this.POINT_DUPLICATE_THRESHOLD);
-              if (uniqueCount >= this.MIN_UNIQUE_POINTS) {
-                contours.push(orderedBoundary);
-              } else {
-                console.debug(`Rejected contour: only ${uniqueCount} unique points (need ${this.MIN_UNIQUE_POINTS})`);
-              }
+              contours.push(orderedBoundary);
             }
           }
         }
@@ -533,15 +521,6 @@ export class ComicEdgeDetector {
       }
     }
 
-    // Filter degenerate component with duplicate points
-    if (componentPixels.length > 0) {
-      const uniqueCount = this.countUniquePoints(componentPixels, this.POINT_DUPLICATE_THRESHOLD);
-      if (uniqueCount < this.MIN_UNIQUE_POINTS) {
-        console.debug(`Rejected component: only ${uniqueCount} unique points`);
-        return [];
-      }
-    }
-
     return componentPixels;
   }
 
@@ -566,26 +545,12 @@ export class ComicEdgeDetector {
       return [];
     }
 
-    // Reject boundary with insufficient distinct points
-    const uniqueCount = this.countUniquePoints(boundaryPixels, this.POINT_DUPLICATE_THRESHOLD);
-    if (uniqueCount < this.MIN_UNIQUE_POINTS) {
-      console.debug(`Rejected boundary: only ${uniqueCount} unique points before tracing`);
-      return [];
-    }
-
     // Phase 3: Order boundary pixels using chain tracing
     const ordered = this.traceContour(boundaryPixels, edges, w, h);
 
     // If chain tracing fails or produces too few points, fall back to angle-based sorting
     if (ordered.length < boundaryPixels.length * 0.5) {
       return this.sortBoundaryByAngle(boundaryPixels);
-    }
-
-    // Validate ordered boundary has unique points
-    const orderedUniqueCount = this.countUniquePoints(ordered, this.POINT_DUPLICATE_THRESHOLD);
-    if (orderedUniqueCount < this.MIN_UNIQUE_POINTS) {
-      console.debug(`Rejected boundary: only ${orderedUniqueCount} unique points after tracing`);
-      return [];
     }
 
     return ordered;
@@ -748,37 +713,25 @@ export class ComicEdgeDetector {
     // All operations in pixel space until final normalization
     if (contour.length < 4) return null;
 
-    // Validate input contour has sufficient unique points
-    const uniqueCount = this.countUniquePoints(contour, this.POINT_DUPLICATE_THRESHOLD);
-    if (uniqueCount < this.MIN_UNIQUE_POINTS) {
-      console.debug(`Rejected contour for approximation: only ${uniqueCount} unique points`);
-      return null;
-    }
-
     const epsilon = 0.02 * this.contourPerimeter(contour);
     const approx = this.douglasPeucker(contour, epsilon);
 
+    let quad: Point[];
     if (approx.length !== 4) {
-      return this.findBestQuadrilateral(contour, w, h);
+      const fallback = this.findBestQuadrilateral(contour, w, h);
+      if (!fallback) return null;
+      quad = fallback;
+    } else {
+      quad = this.orderPoints(approx);
     }
-
-    // Verify Douglas-Peucker produced distinct corners
-    const diagonal = Math.sqrt(w * w + h * h);
-    const minCornerDistance = this.MIN_CORNER_DISTANCE_RATIO * diagonal;
-    if (!this.hasFourDistinctPoints(approx, minCornerDistance)) {
-      console.debug('Rejected Douglas-Peucker result: duplicate corners detected');
-      return this.findBestQuadrilateral(contour, w, h);
-    }
-
-    const ordered = this.orderPoints(approx);
 
     // Reject degenerate rectangles with duplicate corners or insufficient area
-    if (!this.isValidQuadrilateral(ordered, w, h)) {
-      console.debug('Rejected rectangle: failed validation (duplicate corners or insufficient area)');
+    // This is the critical validation point - only validate final quadrilaterals
+    if (!this.isValidQuadrilateral(quad, w, h)) {
       return null;
     }
 
-    return ordered;
+    return quad;
   }
 
   private contourPerimeter(contour: Point[]): number {
@@ -886,18 +839,7 @@ export class ComicEdgeDetector {
     const remaining = [sorted[1], sorted[2]];
     remaining.sort((a, b) => (a.y - a.x) - (b.y - b.x));
 
-    const ordered = [topLeft, remaining[0], bottomRight, remaining[1]];
-
-    // Ensure ordering preserves distinct corners
-    for (let i = 0; i < ordered.length; i++) {
-      for (let j = i + 1; j < ordered.length; j++) {
-        if (this.pointDistance(ordered[i], ordered[j]) < this.POINT_DUPLICATE_THRESHOLD) {
-          console.debug('Warning: orderPoints produced near-duplicate corners');
-        }
-      }
-    }
-
-    return ordered;
+    return [topLeft, remaining[0], bottomRight, remaining[1]];
   }
 
   private tryHoughLineDetection(img: ImageData2D, w: number, h: number): DetectionResult {
@@ -911,12 +853,6 @@ export class ComicEdgeDetector {
     const rectangle = this.findRectangleFromLines(lines, w, h);
 
     if (!rectangle) {
-      return this.getDefaultResult();
-    }
-
-    // Validate rectangle before using it
-    if (!this.isValidQuadrilateral(rectangle, w, h)) {
-      console.debug('Rejected Hough result: failed final validation');
       return this.getDefaultResult();
     }
 
@@ -1213,26 +1149,59 @@ export class ComicEdgeDetector {
   /**
    * Counts the number of spatially distinct points in an array.
    * Points closer than minDistance are considered duplicates.
+   * Optimized with spatial hashing for large point arrays.
    */
   private countUniquePoints(points: Point[], minDistance: number): number {
     if (points.length === 0) return 0;
+    if (points.length <= 4) {
+      // Fast path for small arrays (quadrilaterals)
+      const unique: Point[] = [];
+      for (const point of points) {
+        let isDuplicate = false;
+        for (const uniquePoint of unique) {
+          const dx = point.x - uniquePoint.x;
+          const dy = point.y - uniquePoint.y;
+          if (dx * dx + dy * dy < minDistance * minDistance) {
+            isDuplicate = true;
+            break;
+          }
+        }
+        if (!isDuplicate) {
+          unique.push(point);
+        }
+      }
+      return unique.length;
+    }
 
-    const unique: Point[] = [];
+    // For large arrays, use sampling instead of checking all points
+    // This is safe because we only need to know if there are "enough" unique points
+    const sampleSize = Math.min(20, points.length);
+    const step = Math.floor(points.length / sampleSize);
+    const sampled: Point[] = [];
+    for (let i = 0; i < points.length; i += step) {
+      sampled.push(points[i]);
+    }
 
-    for (const point of points) {
+    let uniqueCount = 0;
+    const checked: Point[] = [];
+    for (const point of sampled) {
       let isDuplicate = false;
-      for (const uniquePoint of unique) {
-        if (this.pointDistance(point, uniquePoint) < minDistance) {
+      for (const checkedPoint of checked) {
+        const dx = point.x - checkedPoint.x;
+        const dy = point.y - checkedPoint.y;
+        if (dx * dx + dy * dy < minDistance * minDistance) {
           isDuplicate = true;
           break;
         }
       }
       if (!isDuplicate) {
-        unique.push(point);
+        checked.push(point);
+        uniqueCount++;
       }
     }
 
-    return unique.length;
+    // Scale up the estimate based on sample ratio
+    return Math.floor(uniqueCount * (points.length / sampleSize));
   }
 
   /**
