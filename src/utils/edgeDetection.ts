@@ -437,15 +437,6 @@ export class ComicEdgeDetector {
     return result;
   }
 
-  /**
-   * Finds contours in an edge image using a three-phase approach:
-   * 1. Identify connected components (groups of connected edge pixels)
-   * 2. Extract boundary pixels (only perimeter pixels, not interior)
-   * 3. Order boundary points in a sequential perimeter path
-   *
-   * This produces ordered contours suitable for polygon approximation algorithms
-   * like Douglas-Peucker, which expect sequential boundary points.
-   */
   private findContours(edges: Uint8Array, w: number, h: number): Point[][] {
     const visited = new Uint8Array(w * h);
     const contours: Point[][] = [];
@@ -454,16 +445,9 @@ export class ComicEdgeDetector {
       for (let x = 0; x < w; x++) {
         const idx = y * w + x;
         if (edges[idx] > 0 && !visited[idx]) {
-          // Phase 1: Identify all pixels in this connected component
-          const componentPixels = this.identifyComponent(edges, visited, w, h, x, y);
-
-          if (componentPixels.length > 50) {
-            // Phase 2 & 3: Extract boundary and order it into a sequential path
-            const orderedBoundary = this.extractOrderedBoundary(componentPixels, edges, w, h);
-
-            if (orderedBoundary.length > 30) {
-              contours.push(orderedBoundary);
-            }
+          const contour = this.traceContour(edges, visited, w, h, x, y);
+          if (contour.length > 50) {
+            contours.push(contour);
           }
         }
       }
@@ -472,11 +456,7 @@ export class ComicEdgeDetector {
     return contours;
   }
 
-  /**
-   * Phase 1: Identifies all pixels belonging to a connected component using flood-fill.
-   * Marks all pixels as visited and collects them for boundary extraction.
-   */
-  private identifyComponent(
+  private traceContour(
     edges: Uint8Array,
     visited: Uint8Array,
     w: number,
@@ -484,7 +464,7 @@ export class ComicEdgeDetector {
     startX: number,
     startY: number
   ): Point[] {
-    const componentPixels: Point[] = [];
+    const contour: Point[] = [];
     const stack: Point[] = [{ x: startX, y: startY }];
 
     while (stack.length > 0) {
@@ -494,9 +474,8 @@ export class ComicEdgeDetector {
       if (visited[idx]) continue;
 
       visited[idx] = 1;
-      componentPixels.push(point);
+      contour.push(point);
 
-      // Check 8-connected neighbors
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           if (dx === 0 && dy === 0) continue;
@@ -514,192 +493,7 @@ export class ComicEdgeDetector {
       }
     }
 
-    return componentPixels;
-  }
-
-  /**
-   * Phase 2 & 3: Extracts boundary pixels from a component and orders them.
-   *
-   * A pixel is on the boundary if it has at least one non-edge neighbor.
-   * The boundary is then traced in sequential order using chain-code following.
-   */
-  private extractOrderedBoundary(
-    componentPixels: Point[],
-    edges: Uint8Array,
-    w: number,
-    h: number
-  ): Point[] {
-    // Phase 2: Filter to only boundary pixels
-    const boundaryPixels = componentPixels.filter(p =>
-      this.isBoundaryPixel(p, edges, w, h)
-    );
-
-    if (boundaryPixels.length < 4) {
-      return [];
-    }
-
-    // Phase 3: Order boundary pixels using chain tracing
-    const ordered = this.traceContour(boundaryPixels, edges, w, h);
-
-    // If chain tracing fails or produces too few points, fall back to angle-based sorting
-    if (ordered.length < boundaryPixels.length * 0.5) {
-      return this.sortBoundaryByAngle(boundaryPixels);
-    }
-
-    return ordered;
-  }
-
-  /**
-   * Checks if a pixel is on the boundary of a component.
-   * A boundary pixel must have at least one non-edge neighbor in its 8-connected neighborhood.
-   */
-  private isBoundaryPixel(point: Point, edges: Uint8Array, w: number, h: number): boolean {
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        if (dx === 0 && dy === 0) continue;
-
-        const nx = point.x + dx;
-        const ny = point.y + dy;
-
-        // If neighbor is out of bounds or not an edge pixel, this is a boundary pixel
-        if (nx < 0 || nx >= w || ny < 0 || ny >= h) {
-          return true;
-        }
-
-        const nIdx = ny * w + nx;
-        if (edges[nIdx] === 0) {
-          return true;
-        }
-      }
-    }
-
-    return false; // Completely surrounded by edge pixels (interior point)
-  }
-
-  /**
-   * Traces boundary pixels in sequential order using Moore neighborhood chain-code following.
-   *
-   * Algorithm:
-   * 1. Start from the topmost-leftmost boundary pixel
-   * 2. At each step, search 8-connected neighbors in clockwise order
-   * 3. Follow the boundary until returning to the start pixel
-   *
-   * This creates an ordered perimeter path suitable for Douglas-Peucker approximation.
-   */
-  private traceContour(
-    boundaryPixels: Point[],
-    edges: Uint8Array,
-    w: number,
-    h: number
-  ): Point[] {
-    if (boundaryPixels.length === 0) return [];
-
-    // Create a lookup set for fast boundary pixel checking
-    const boundarySet = new Set<number>();
-    for (const p of boundaryPixels) {
-      boundarySet.add(p.y * w + p.x);
-    }
-
-    // Find starting point: topmost-leftmost pixel for consistency
-    let startPoint = boundaryPixels[0];
-    for (const p of boundaryPixels) {
-      if (p.y < startPoint.y || (p.y === startPoint.y && p.x < startPoint.x)) {
-        startPoint = p;
-      }
-    }
-
-    const orderedBoundary: Point[] = [];
-    const visited = new Set<number>();
-
-    // Moore neighborhood: 8 directions in clockwise order starting from top
-    // [dy, dx] pairs: N, NE, E, SE, S, SW, W, NW
-    const directions = [
-      [-1, 0], [-1, 1], [0, 1], [1, 1],
-      [1, 0], [1, -1], [0, -1], [-1, -1]
-    ];
-
-    let current = startPoint;
-    let dirIdx = 0; // Start searching from north
-    const maxIterations = boundaryPixels.length * 2; // Prevent infinite loops
-    let iterations = 0;
-
-    do {
-      const currentIdx = current.y * w + current.x;
-
-      if (visited.has(currentIdx)) {
-        break; // Completed the loop
-      }
-
-      visited.add(currentIdx);
-      orderedBoundary.push({ x: current.x, y: current.y });
-
-      // Search for next boundary pixel in clockwise order
-      let found = false;
-      const searchStart = (dirIdx + 5) % 8; // Start search from 5 steps back (backtrack strategy)
-
-      for (let i = 0; i < 8; i++) {
-        const searchDirIdx = (searchStart + i) % 8;
-        const [dy, dx] = directions[searchDirIdx];
-        const nx = current.x + dx;
-        const ny = current.y + dy;
-
-        if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
-          const nIdx = ny * w + nx;
-
-          if (boundarySet.has(nIdx) && !visited.has(nIdx)) {
-            current = { x: nx, y: ny };
-            dirIdx = searchDirIdx;
-            found = true;
-            break;
-          }
-        }
-      }
-
-      if (!found) {
-        // No unvisited neighbor found, check if we can close the loop
-        for (let i = 0; i < 8; i++) {
-          const [dy, dx] = directions[i];
-          const nx = current.x + dx;
-          const ny = current.y + dy;
-
-          if (nx === startPoint.x && ny === startPoint.y) {
-            // Successfully closed the loop
-            return orderedBoundary;
-          }
-        }
-
-        break; // Cannot continue tracing
-      }
-
-      iterations++;
-    } while (iterations < maxIterations &&
-             (current.x !== startPoint.x || current.y !== startPoint.y || orderedBoundary.length === 1));
-
-    // Return ordered boundary if we traced a significant portion
-    return orderedBoundary.length >= 4 ? orderedBoundary : [];
-  }
-
-  /**
-   * Fallback method: Sorts boundary pixels by angle from centroid.
-   * Used when chain tracing fails to produce a complete boundary.
-   */
-  private sortBoundaryByAngle(boundaryPixels: Point[]): Point[] {
-    if (boundaryPixels.length === 0) return [];
-
-    // Calculate centroid
-    const centroid = {
-      x: boundaryPixels.reduce((sum, p) => sum + p.x, 0) / boundaryPixels.length,
-      y: boundaryPixels.reduce((sum, p) => sum + p.y, 0) / boundaryPixels.length
-    };
-
-    // Sort by angle from centroid
-    const sorted = [...boundaryPixels].sort((a, b) => {
-      const angleA = Math.atan2(a.y - centroid.y, a.x - centroid.x);
-      const angleB = Math.atan2(b.y - centroid.y, b.x - centroid.x);
-      return angleA - angleB;
-    });
-
-    return sorted;
+    return contour;
   }
 
   private approximateRectangle(contour: Point[], w: number, h: number): Point[] | null {
