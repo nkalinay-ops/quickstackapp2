@@ -16,9 +16,22 @@
     "db:deploy:dry-run": "bash scripts/deploy-migrations.sh --dry-run",
     "db:deploy:prod": "bash scripts/deploy-migrations.sh",
     "db:rollback:qa": "bash scripts/rollback.sh qa",
-    "db:rollback:prod": "bash scripts/rollback.sh prod"
+    "db:rollback:prod": "bash scripts/rollback.sh prod",
+    "cap:setup": "bash scripts/setup-capacitor.sh",
+    "cap:sync": "npm run build && npx cap sync",
+    "cap:ios": "npm run build && npx cap sync && npx cap open ios",
+    "cap:android": "npm run build && npx cap sync && npx cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.0",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/camera": "^8.0.2",
+    "@capacitor/cli": "^8.3.0",
+    "@capacitor/core": "^8.3.0",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/ios": "^8.3.0",
+    "@capacitor/splash-screen": "^8.0.1",
+    "@capacitor/status-bar": "^8.0.2",
     "@supabase/supabase-js": "^2.57.4",
     "lucide-react": "^0.344.0",
     "react": "^18.3.1",
