@@ -10,6 +10,16 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom'],
+          'supabase': ['@supabase/supabase-js'],
+          'xlsx': ['xlsx'],
+          'lucide': ['lucide-react'],
+        },
+      },
+    },
   },
   server: {
     host: '0.0.0.0',
