@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { isNativePlatform } from '../lib/capacitorSetup';
 
 type AuthContextType = {
   user: User | null;
@@ -117,8 +118,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const resetPassword = async (email: string) => {
+    const redirectTo = isNativePlatform()
+      ? `https://fsqmyefqbjndilrwluep.supabase.co/auth/v1/callback?redirect_to=com.comicvault.app://reset-password`
+      : `${window.location.origin}/?page=reset-password`;
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/?page=reset-password`,
+      redirectTo,
     });
     if (error) throw error;
   };
