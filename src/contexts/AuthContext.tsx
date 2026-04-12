@@ -53,22 +53,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        const isTerminated = await checkTerminationStatus(session.user.id);
-        if (isTerminated) {
-          await supabase.auth.signOut();
-          setUser(null);
-          setIsAdmin(false);
+    const SESSION_TIMEOUT_MS = 8000;
+
+    const sessionTimeout = new Promise<{ data: { session: null } }>((resolve) =>
+      setTimeout(() => resolve({ data: { session: null } }), SESSION_TIMEOUT_MS)
+    );
+
+    Promise.race([supabase.auth.getSession(), sessionTimeout])
+      .then(async ({ data: { session } }) => {
+        if (session?.user) {
+          const isTerminated = await checkTerminationStatus(session.user.id);
+          if (isTerminated) {
+            await supabase.auth.signOut();
+            setUser(null);
+            setIsAdmin(false);
+          } else {
+            setUser(session.user);
+            await fetchAdminStatus(session.user.id);
+          }
         } else {
-          setUser(session.user);
-          await fetchAdminStatus(session.user.id);
+          setUser(null);
         }
-      } else {
+        setLoading(false);
+      })
+      .catch(() => {
         setUser(null);
-      }
-      setLoading(false);
-    });
+        setLoading(false);
+      });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       (async () => {
