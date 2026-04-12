@@ -4,10 +4,14 @@ import App from './App.tsx';
 import './index.css';
 import { initCapacitorPlugins } from './lib/capacitorSetup.ts';
 
-initCapacitorPlugins();
-
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
   </StrictMode>
 );
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => initCapacitorPlugins());
+} else {
+  initCapacitorPlugins();
+}
