@@ -118,8 +118,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const resetPassword = async (email: string) => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     const redirectTo = isNativePlatform()
-      ? `https://fsqmyefqbjndilrwluep.supabase.co/auth/v1/callback?redirect_to=com.comicvault.app://reset-password`
+      ? `${supabaseUrl}/auth/v1/callback?redirect_to=com.comicvault.app://reset-password`
       : `${window.location.origin}/?page=reset-password`;
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo,
