@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { Upload, Download, FileText, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 
 interface BulkUploadJob {
   id: string;
@@ -91,7 +90,8 @@ export function BulkUpload() {
     }
   };
 
-  const downloadTemplate = () => {
+  const downloadTemplate = async () => {
+    const XLSX = await import('xlsx');
     const template = [
       {
         Title: 'The Amazing Spider-Man',
@@ -170,6 +170,7 @@ export function BulkUpload() {
   };
 
   const parseFile = async (file: File): Promise<ComicRow[]> => {
+    const XLSX = await import('xlsx');
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
 
