@@ -58,7 +58,10 @@ function AppContent() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <div className="text-gray-400">Loading...</div>
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <div className="text-white text-sm">Loading...</div>
+        </div>
       </div>
     );
   }
