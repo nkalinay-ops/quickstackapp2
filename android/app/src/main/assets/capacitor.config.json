@@ -1,0 +1,10 @@
+{
+	"appId": "com.comicvault.app",
+	"appName": "Comic Vault",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https",
+		"cleartext": false
+	},
+	"android": {}
+}

@@ -17,13 +17,6 @@ const config: CapacitorConfig = {
       releaseType: 'AAB',
     },
   },
-  plugins: {
-    SplashScreen: {
-      launchShowDuration: 2000,
-      backgroundColor: '#030712',
-      showSpinner: false,
-    },
-  },
 };
 
 export default config;
