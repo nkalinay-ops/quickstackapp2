@@ -53,7 +53,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    const SESSION_TIMEOUT_MS = 8000;
+    const SESSION_TIMEOUT_MS = 3000;
+
+    let settled = false;
+
+    const hardTimeout = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        setUser(null);
+        setLoading(false);
+      }
+    }, SESSION_TIMEOUT_MS);
 
     const sessionTimeout = new Promise<{ data: { session: null } }>((resolve) =>
       setTimeout(() => resolve({ data: { session: null } }), SESSION_TIMEOUT_MS)
@@ -61,6 +71,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     Promise.race([supabase.auth.getSession(), sessionTimeout])
       .then(async ({ data: { session } }) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(hardTimeout);
         if (session?.user) {
           const isTerminated = await checkTerminationStatus(session.user.id);
           if (isTerminated) {
@@ -77,6 +90,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
       })
       .catch(() => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(hardTimeout);
         setUser(null);
         setLoading(false);
       });
