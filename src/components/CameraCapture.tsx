@@ -1,15 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { Camera, X, RotateCcw } from 'lucide-react';
 import { ImageCrop } from './ImageCrop';
-import { Capacitor } from '@capacitor/core';
-import { Camera as CapCamera, CameraResultType, CameraSource, CameraDirection } from '@capacitor/camera';
 
 type CameraCaptureProps = {
   onCapture: (imageDataUrl: string) => void;
   onClose: () => void;
 };
-
-const isNative = Capacitor.isNativePlatform();
 
 export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -20,18 +16,19 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isNative) {
-      startBrowserCamera();
-      return () => stopBrowserCamera();
-    }
+    startCamera();
+    return () => {
+      stopCamera();
+    };
   }, [facingMode]);
 
-  const startBrowserCamera = async () => {
+  const startCamera = async () => {
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
         audio: false,
       });
+
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
       }
@@ -43,36 +40,13 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     }
   };
 
-  const stopBrowserCamera = () => {
+  const stopCamera = () => {
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
     }
   };
 
-  const captureNative = async () => {
-    try {
-      const photo = await CapCamera.getPhoto({
-        resultType: CameraResultType.DataUrl,
-        source: CameraSource.Camera,
-        quality: 95,
-        direction: facingMode === 'environment' ? CameraDirection.Rear : CameraDirection.Front,
-        saveToGallery: false,
-        allowEditing: false,
-        width: 1920,
-        height: 1080,
-        correctOrientation: true,
-      });
-
-      if (photo.dataUrl) {
-        setCapturedImage(photo.dataUrl);
-      }
-    } catch (err) {
-      console.error('Native camera error:', err);
-      setError('Unable to access camera. Please check permissions.');
-    }
-  };
-
-  const captureBrowser = () => {
+  const capturePhoto = () => {
     if (!videoRef.current || !canvasRef.current) return;
 
     const video = videoRef.current;
@@ -85,17 +59,10 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     if (!context) return;
 
     context.drawImage(video, 0, 0);
-    const imageDataUrl = canvas.toDataURL('image/jpeg', 0.95);
-    stopBrowserCamera();
-    setCapturedImage(imageDataUrl);
-  };
 
-  const capturePhoto = () => {
-    if (isNative) {
-      captureNative();
-    } else {
-      captureBrowser();
-    }
+    const imageDataUrl = canvas.toDataURL('image/jpeg', 0.95);
+    stopCamera();
+    setCapturedImage(imageDataUrl);
   };
 
   const handleCropComplete = (croppedImageDataUrl: string) => {
@@ -104,9 +71,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
 
   const handleCropCancel = () => {
     setCapturedImage(null);
-    if (!isNative) {
-      startBrowserCamera();
-    }
+    startCamera();
   };
 
   const switchCamera = () => {
@@ -147,7 +112,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
             <div className="text-center">
               <p className="text-red-400 mb-4">{error}</p>
               <button
-                onClick={isNative ? captureNative : startBrowserCamera}
+                onClick={startCamera}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
               >
                 Try Again
@@ -156,19 +121,12 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
           </div>
         ) : (
           <>
-            {!isNative && (
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                className="w-full h-full object-cover"
-              />
-            )}
-            {isNative && (
-              <div className="flex items-center justify-center h-full">
-                <p className="text-gray-400 text-sm">Tap the button below to open the camera</p>
-              </div>
-            )}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              className="w-full h-full object-cover"
+            />
             <div className="absolute inset-0 pointer-events-none">
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-md aspect-[2/3] border-2 border-blue-500 rounded-lg shadow-lg">
                 <div className="absolute -top-1 -left-1 w-6 h-6 border-t-4 border-l-4 border-blue-500 rounded-tl-lg"></div>
@@ -177,11 +135,9 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                 <div className="absolute -bottom-1 -right-1 w-6 h-6 border-b-4 border-r-4 border-blue-500 rounded-br-lg"></div>
               </div>
             </div>
-            {!isNative && (
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-6 text-center">
-                <p className="text-white text-sm mb-2">Position comic cover within frame</p>
-              </div>
-            )}
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-6 text-center">
+              <p className="text-white text-sm mb-2">Position comic cover within frame</p>
+            </div>
           </>
         )}
       </div>

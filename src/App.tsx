@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Auth } from './components/Auth';
 import { Layout } from './components/Layout';
@@ -7,13 +7,12 @@ import { Collection } from './pages/Collection';
 import { AddComic } from './pages/AddComic';
 import { Wishlist } from './pages/Wishlist';
 import { Settings } from './pages/Settings';
+import { BetaKeys } from './pages/BetaKeys';
+import { AdminPanel } from './pages/AdminPanel';
+import { BulkUpload } from './pages/BulkUpload';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
 import { TestPasswordReset } from './pages/TestPasswordReset';
-
-const BetaKeys = lazy(() => import('./pages/BetaKeys').then(m => ({ default: m.BetaKeys })));
-const AdminPanel = lazy(() => import('./pages/AdminPanel').then(m => ({ default: m.AdminPanel })));
-const BulkUpload = lazy(() => import('./pages/BulkUpload').then(m => ({ default: m.BulkUpload })));
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -58,10 +57,7 @@ function AppContent() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <div className="text-white text-sm">Loading...</div>
-        </div>
+        <div className="text-gray-400">Loading...</div>
       </div>
     );
   }
@@ -89,11 +85,9 @@ function AppContent() {
       {currentPage === 'add' && <AddComic />}
       {currentPage === 'wishlist' && <Wishlist />}
       {currentPage === 'settings' && <Settings />}
-      <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>}>
-        {currentPage === 'beta-keys' && <BetaKeys />}
-        {currentPage === 'admin' && <AdminPanel />}
-        {currentPage === 'bulk-upload' && <BulkUpload />}
-      </Suspense>
+      {currentPage === 'beta-keys' && <BetaKeys />}
+      {currentPage === 'admin' && <AdminPanel />}
+      {currentPage === 'bulk-upload' && <BulkUpload />}
     </Layout>
   );
 }

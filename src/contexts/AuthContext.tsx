@@ -52,23 +52,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    const loadingTimeout = setTimeout(() => {
-      setLoading(false);
-    }, 5000);
-
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      clearTimeout(loadingTimeout);
       if (session?.user) {
-        const [isTerminated] = await Promise.all([
-          checkTerminationStatus(session.user.id),
-          fetchAdminStatus(session.user.id),
-        ]);
+        const isTerminated = await checkTerminationStatus(session.user.id);
         if (isTerminated) {
           await supabase.auth.signOut();
           setUser(null);
           setIsAdmin(false);
         } else {
           setUser(session.user);
+          await fetchAdminStatus(session.user.id);
         }
       } else {
         setUser(null);
