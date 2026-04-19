@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { LogOut, User, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { LogOut, User, Mail, Lock, Eye, EyeOff, Trash2, AlertTriangle } from 'lucide-react';
 import { PasswordStrength, validatePassword } from '../components/PasswordStrength';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { AlertModal } from '../components/AlertModal';
 
 export function Settings() {
-  const { user, signOut, updatePassword } = useAuth();
+  const { user, signOut, updatePassword, deleteAccount } = useAuth();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -16,32 +16,39 @@ export function Settings() {
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordError, setPasswordError] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState('');
-  const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; action: 'signout' | null }>({ isOpen: false, action: null });
-  const [alertModal, setAlertModal] = useState<{ isOpen: boolean; title?: string; message: string; type?: 'error' | 'success' | 'info' }>({
-    isOpen: false,
-    message: '',
-  });
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    action: 'signout' | 'delete' | null;
+  }>({ isOpen: false, action: null });
+  const [alertModal, setAlertModal] = useState<{
+    isOpen: boolean;
+    title?: string;
+    message: string;
+    type?: 'error' | 'success' | 'info';
+  }>({ isOpen: false, message: '' });
 
   const handleSignOut = async () => {
     try {
       await signOut();
-    } catch (error) {
-      console.error('Error signing out:', error);
-      setAlertModal({
-        isOpen: true,
-        title: 'Error',
-        message: 'Failed to sign out',
-        type: 'error',
-      });
+    } catch {
+      setAlertModal({ isOpen: true, title: 'Error', message: 'Failed to sign out', type: 'error' });
     }
   };
 
-  const handleSignOutClick = () => {
-    setConfirmModal({ isOpen: true, action: 'signout' });
-  };
-
-  const handleConfirmSignOut = () => {
-    handleSignOut();
+  const handleDeleteAccount = async () => {
+    setDeleteLoading(true);
+    try {
+      await deleteAccount();
+    } catch (error) {
+      setDeleteLoading(false);
+      setAlertModal({
+        isOpen: true,
+        title: 'Error',
+        message: error instanceof Error ? error.message : 'Failed to delete account. Please try again.',
+        type: 'error',
+      });
+    }
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -211,7 +218,7 @@ export function Settings() {
         </div>
 
         <div className="bg-gray-900 rounded-lg p-4 border border-gray-800">
-          <h2 className="text-lg font-semibold mb-4">About QuickStack</h2>
+          <h2 className="text-lg font-semibold mb-1">About QuickStack</h2>
           <p className="text-gray-400 text-sm mb-4">
             QuickStack is a mobile-first comic book collection tracker designed for speed and simplicity.
             Add comics to your collection in under 5 seconds.
@@ -219,8 +226,26 @@ export function Settings() {
           <div className="text-xs text-gray-500">Version 1.0.0</div>
         </div>
 
+        <div className="bg-gray-900 rounded-lg p-4 border border-red-900">
+          <h2 className="text-lg font-semibold mb-2 flex items-center gap-2 text-red-400">
+            <AlertTriangle size={20} />
+            Danger Zone
+          </h2>
+          <p className="text-gray-400 text-sm mb-4">
+            Permanently delete your account and all associated data including your comic collection, wishlist, and images. This action cannot be undone.
+          </p>
+          <button
+            onClick={() => setConfirmModal({ isOpen: true, action: 'delete' })}
+            disabled={deleteLoading}
+            className="w-full py-3 bg-transparent border border-red-700 hover:bg-red-950 text-red-400 hover:text-red-300 font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            <Trash2 size={18} />
+            {deleteLoading ? 'Deleting Account...' : 'Delete My Account'}
+          </button>
+        </div>
+
         <button
-          onClick={handleSignOutClick}
+          onClick={() => setConfirmModal({ isOpen: true, action: 'signout' })}
           className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
         >
           <LogOut size={20} />
@@ -229,14 +254,25 @@ export function Settings() {
       </div>
 
       <ConfirmModal
-        isOpen={confirmModal.isOpen}
+        isOpen={confirmModal.isOpen && confirmModal.action === 'signout'}
         onClose={() => setConfirmModal({ isOpen: false, action: null })}
-        onConfirm={handleConfirmSignOut}
+        onConfirm={handleSignOut}
         title="Sign Out"
         message="Are you sure you want to sign out of QuickStack?"
         confirmText="Sign Out"
         cancelText="Cancel"
         isDestructive={false}
+      />
+
+      <ConfirmModal
+        isOpen={confirmModal.isOpen && confirmModal.action === 'delete'}
+        onClose={() => setConfirmModal({ isOpen: false, action: null })}
+        onConfirm={handleDeleteAccount}
+        title="Delete Account"
+        message={`Are you sure you want to permanently delete your account? This will remove all your comics, wishlist items, and images. This cannot be undone.`}
+        confirmText="Delete My Account"
+        cancelText="Cancel"
+        isDestructive={true}
       />
 
       <AlertModal

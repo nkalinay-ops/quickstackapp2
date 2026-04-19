@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.comicvault.app',
-  appName: 'Comic Vault',
+  appId: 'com.quickstack.app',
+  appName: 'QuickStack',
   webDir: 'dist',
   server: {
     androidScheme: 'https',

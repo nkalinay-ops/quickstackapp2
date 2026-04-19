@@ -1,4 +1,4 @@
-package com.comicvault.app;
+package com.quickstack.app;
 
 import android.os.Bundle;
 import androidx.core.splashscreen.SplashScreen;

@@ -13,6 +13,7 @@ type AuthContextType = {
   refreshAdminStatus: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
+  deleteAccount: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -147,7 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const resetPassword = async (email: string) => {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     const redirectTo = isNativePlatform()
-      ? `${supabaseUrl}/auth/v1/callback?redirect_to=com.comicvault.app://reset-password`
+      ? `${supabaseUrl}/auth/v1/callback?redirect_to=com.quickstack.app://reset-password`
       : `${window.location.origin}/?page=reset-password`;
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo,
@@ -162,8 +163,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   };
 
+  const deleteAccount = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('No active session');
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const response = await fetch(`${supabaseUrl}/functions/v1/delete-account`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to delete account');
+    }
+
+    await supabase.auth.signOut();
+    window.history.replaceState({}, '', window.location.pathname);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, isAdmin, signIn, signUp, signOut, refreshAdminStatus, resetPassword, updatePassword }}>
+    <AuthContext.Provider value={{ user, loading, isAdmin, signIn, signUp, signOut, refreshAdminStatus, resetPassword, updatePassword, deleteAccount }}>
       {children}
     </AuthContext.Provider>
   );
