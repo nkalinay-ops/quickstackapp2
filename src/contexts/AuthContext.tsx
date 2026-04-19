@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { isNativePlatform } from '../lib/capacitorSetup';
 
 type AuthContextType = {
   user: User | null;
@@ -12,6 +13,7 @@ type AuthContextType = {
   refreshAdminStatus: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
+  deleteAccount: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -52,22 +54,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        const isTerminated = await checkTerminationStatus(session.user.id);
-        if (isTerminated) {
-          await supabase.auth.signOut();
-          setUser(null);
-          setIsAdmin(false);
-        } else {
-          setUser(session.user);
-          await fetchAdminStatus(session.user.id);
-        }
-      } else {
+    const SESSION_TIMEOUT_MS = 3000;
+
+    let settled = false;
+
+    const hardTimeout = setTimeout(() => {
+      if (!settled) {
+        settled = true;
         setUser(null);
+        setLoading(false);
       }
-      setLoading(false);
-    });
+    }, SESSION_TIMEOUT_MS);
+
+    const sessionTimeout = new Promise<{ data: { session: null } }>((resolve) =>
+      setTimeout(() => resolve({ data: { session: null } }), SESSION_TIMEOUT_MS)
+    );
+
+    Promise.race([supabase.auth.getSession(), sessionTimeout])
+      .then(async ({ data: { session } }) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(hardTimeout);
+        if (session?.user) {
+          const isTerminated = await checkTerminationStatus(session.user.id);
+          if (isTerminated) {
+            await supabase.auth.signOut();
+            setUser(null);
+            setIsAdmin(false);
+          } else {
+            setUser(session.user);
+            await fetchAdminStatus(session.user.id);
+          }
+        } else {
+          setUser(null);
+        }
+        setLoading(false);
+      })
+      .catch(() => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(hardTimeout);
+        setUser(null);
+        setLoading(false);
+      });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       (async () => {
@@ -117,8 +146,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const resetPassword = async (email: string) => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const redirectTo = isNativePlatform()
+      ? `${supabaseUrl}/auth/v1/callback?redirect_to=com.quickstack.app://reset-password`
+      : `${window.location.origin}/?page=reset-password`;
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/?page=reset-password`,
+      redirectTo,
     });
     if (error) throw error;
   };
@@ -130,8 +163,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   };
 
+  const deleteAccount = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('No active session');
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const response = await fetch(`${supabaseUrl}/functions/v1/delete-account`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to delete account');
+    }
+
+    await supabase.auth.signOut();
+    window.history.replaceState({}, '', window.location.pathname);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, isAdmin, signIn, signUp, signOut, refreshAdminStatus, resetPassword, updatePassword }}>
+    <AuthContext.Provider value={{ user, loading, isAdmin, signIn, signUp, signOut, refreshAdminStatus, resetPassword, updatePassword, deleteAccount }}>
       {children}
     </AuthContext.Provider>
   );

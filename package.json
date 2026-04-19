@@ -9,6 +9,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "cap:sync": "npx cap sync android",
+    "cap:open": "npx cap open android",
+    "build:android": "npm run build && npx cap sync android",
     "db:migration:new": "bash scripts/create-migration.sh",
     "db:migration:verify": "bash scripts/verify-migrations.sh",
     "db:backup:qa": "bash scripts/backup-db.sh qa",
@@ -19,6 +22,8 @@
     "db:rollback:prod": "bash scripts/rollback.sh prod"
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.0",
+    "@capacitor/core": "^8.3.0",
     "@supabase/supabase-js": "^2.57.4",
     "lucide-react": "^0.344.0",
     "react": "^18.3.1",
@@ -26,6 +31,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.3.0",
     "@eslint/js": "^9.9.1",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",

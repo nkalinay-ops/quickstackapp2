@@ -1,0 +1,10 @@
+{
+	"appId": "com.quickstack.app",
+	"appName": "QuickStack",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https",
+		"cleartext": false
+	},
+	"android": {}
+}

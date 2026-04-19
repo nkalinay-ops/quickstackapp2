@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { initCapacitor } from './lib/capacitorSetup';
 import { Auth } from './components/Auth';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
@@ -93,6 +94,10 @@ function AppContent() {
 }
 
 function App() {
+  useEffect(() => {
+    initCapacitor();
+  }, []);
+
   return (
     <AuthProvider>
       <AppContent />

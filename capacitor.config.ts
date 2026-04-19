@@ -1,9 +1,22 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'quickstackapp.com',
-  appName: 'quickstackcomicapp',
-  webDir: 'dist'
+  appId: 'com.quickstack.app',
+  appName: 'QuickStack',
+  webDir: 'dist',
+  server: {
+    androidScheme: 'https',
+    cleartext: false,
+  },
+  android: {
+    buildOptions: {
+      keystorePath: undefined,
+      keystorePassword: undefined,
+      keystoreAlias: undefined,
+      keystoreAliasPassword: undefined,
+      releaseType: 'AAB',
+    },
+  },
 };
 
 export default config;

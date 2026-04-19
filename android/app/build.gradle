@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "quickstackapp.com"
+    namespace = "com.quickstack.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "quickstackapp.com"
+        applicationId "com.quickstack.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
