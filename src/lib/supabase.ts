@@ -1,16 +1,19 @@
 import { createClient } from '@supabase/supabase-js';
+import { Capacitor } from '@capacitor/core';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables');
+  console.error('[QuickStack] Missing Supabase environment variables. Check your .env file.');
 }
+
+const isNative = Capacitor.isNativePlatform();
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    detectSessionInUrl: true,
-    flowType: 'pkce',
+    detectSessionInUrl: !isNative,
+    flowType: isNative ? 'implicit' : 'pkce',
     autoRefreshToken: true,
     persistSession: true,
   },

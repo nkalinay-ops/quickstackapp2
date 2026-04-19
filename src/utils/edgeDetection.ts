@@ -19,6 +19,12 @@ export class ComicEdgeDetector {
   private readonly MAX_DETECTION_SIZE = 800;
   private readonly CONFIDENCE_THRESHOLD = 0.5;
 
+  // Validation thresholds for hardening geometry detection
+  private readonly MIN_CORNER_DISTANCE_RATIO = 0.03; // 3% of image diagonal
+  private readonly MIN_AREA_RATIO = 0.05; // 5% of image area
+  private readonly MIN_UNIQUE_POINTS = 4; // minimum distinct points for valid geometry
+  private readonly POINT_DUPLICATE_THRESHOLD = 2.0; // pixels - points closer than this are duplicates
+
   async detectEdges(img: HTMLImageElement): Promise<DetectionResult> {
     const startTime = performance.now();
 
@@ -45,8 +51,10 @@ export class ComicEdgeDetector {
     const gray = this.toGrayscale(imageData);
     const preprocessed = this.preprocessImage(gray, w, h);
 
-    let result: DetectionResult | null = null;
+    // Initialize result with safe default to ensure confidence is always accessible
+    let result = this.getDefaultResult();
 
+    // Stage 1: Try Canny-Contour detection (highest potential confidence)
     if (performance.now() - startTime < 2000) {
       result = this.tryCannyContourDetection(preprocessed, w, h);
       if (result.confidence >= 0.7) {
@@ -54,6 +62,7 @@ export class ComicEdgeDetector {
       }
     }
 
+    // Stage 2: Try Hough-Line detection if first stage wasn't confident enough
     if (performance.now() - startTime < 2500) {
       const houghResult = this.tryHoughLineDetection(preprocessed, w, h);
       if (houghResult.confidence > result.confidence) {
@@ -64,6 +73,7 @@ export class ComicEdgeDetector {
       }
     }
 
+    // Stage 3: Try Advanced-Contour analysis as fallback method
     if (performance.now() - startTime < 3000) {
       const advancedResult = this.tryAdvancedContourAnalysis(preprocessed, w, h);
       if (advancedResult.confidence > result.confidence) {
@@ -71,6 +81,7 @@ export class ComicEdgeDetector {
       }
     }
 
+    // Return best result if above threshold, otherwise return default
     return result.confidence >= this.CONFIDENCE_THRESHOLD
       ? result
       : this.getDefaultResult();
@@ -200,6 +211,7 @@ export class ComicEdgeDetector {
     scored.sort((a, b) => b.score - a.score);
     const best = scored[0];
 
+    // Normalize from pixel space to [0,1] range only at final return
     return {
       points: this.normalizePoints(best.rect, w, h),
       confidence: Math.min(best.score, 0.95),
@@ -432,6 +444,15 @@ export class ComicEdgeDetector {
     return result;
   }
 
+  /**
+   * Finds contours in an edge image using a three-phase approach:
+   * 1. Identify connected components (groups of connected edge pixels)
+   * 2. Extract boundary pixels (only perimeter pixels, not interior)
+   * 3. Order boundary points in a sequential perimeter path
+   *
+   * This produces ordered contours suitable for polygon approximation algorithms
+   * like Douglas-Peucker, which expect sequential boundary points.
+   */
   private findContours(edges: Uint8Array, w: number, h: number): Point[][] {
     const visited = new Uint8Array(w * h);
     const contours: Point[][] = [];
@@ -440,9 +461,16 @@ export class ComicEdgeDetector {
       for (let x = 0; x < w; x++) {
         const idx = y * w + x;
         if (edges[idx] > 0 && !visited[idx]) {
-          const contour = this.traceContour(edges, visited, w, h, x, y);
-          if (contour.length > 50) {
-            contours.push(contour);
+          // Phase 1: Identify all pixels in this connected component
+          const componentPixels = this.identifyComponent(edges, visited, w, h, x, y);
+
+          if (componentPixels.length > 50) {
+            // Phase 2 & 3: Extract boundary and order it into a sequential path
+            const orderedBoundary = this.extractOrderedBoundary(componentPixels, edges, w, h);
+
+            if (orderedBoundary.length > 30) {
+              contours.push(orderedBoundary);
+            }
           }
         }
       }
@@ -451,7 +479,11 @@ export class ComicEdgeDetector {
     return contours;
   }
 
-  private traceContour(
+  /**
+   * Phase 1: Identifies all pixels belonging to a connected component using flood-fill.
+   * Marks all pixels as visited and collects them for boundary extraction.
+   */
+  private identifyComponent(
     edges: Uint8Array,
     visited: Uint8Array,
     w: number,
@@ -459,7 +491,7 @@ export class ComicEdgeDetector {
     startX: number,
     startY: number
   ): Point[] {
-    const contour: Point[] = [];
+    const componentPixels: Point[] = [];
     const stack: Point[] = [{ x: startX, y: startY }];
 
     while (stack.length > 0) {
@@ -469,8 +501,9 @@ export class ComicEdgeDetector {
       if (visited[idx]) continue;
 
       visited[idx] = 1;
-      contour.push(point);
+      componentPixels.push(point);
 
+      // Check 8-connected neighbors
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           if (dx === 0 && dy === 0) continue;
@@ -488,20 +521,217 @@ export class ComicEdgeDetector {
       }
     }
 
-    return contour;
+    return componentPixels;
+  }
+
+  /**
+   * Phase 2 & 3: Extracts boundary pixels from a component and orders them.
+   *
+   * A pixel is on the boundary if it has at least one non-edge neighbor.
+   * The boundary is then traced in sequential order using chain-code following.
+   */
+  private extractOrderedBoundary(
+    componentPixels: Point[],
+    edges: Uint8Array,
+    w: number,
+    h: number
+  ): Point[] {
+    // Phase 2: Filter to only boundary pixels
+    const boundaryPixels = componentPixels.filter(p =>
+      this.isBoundaryPixel(p, edges, w, h)
+    );
+
+    if (boundaryPixels.length < 4) {
+      return [];
+    }
+
+    // Phase 3: Order boundary pixels using chain tracing
+    const ordered = this.traceContour(boundaryPixels, edges, w, h);
+
+    // If chain tracing fails or produces too few points, fall back to angle-based sorting
+    if (ordered.length < boundaryPixels.length * 0.5) {
+      return this.sortBoundaryByAngle(boundaryPixels);
+    }
+
+    return ordered;
+  }
+
+  /**
+   * Checks if a pixel is on the boundary of a component.
+   * A boundary pixel must have at least one non-edge neighbor in its 8-connected neighborhood.
+   */
+  private isBoundaryPixel(point: Point, edges: Uint8Array, w: number, h: number): boolean {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+
+        const nx = point.x + dx;
+        const ny = point.y + dy;
+
+        // If neighbor is out of bounds or not an edge pixel, this is a boundary pixel
+        if (nx < 0 || nx >= w || ny < 0 || ny >= h) {
+          return true;
+        }
+
+        const nIdx = ny * w + nx;
+        if (edges[nIdx] === 0) {
+          return true;
+        }
+      }
+    }
+
+    return false; // Completely surrounded by edge pixels (interior point)
+  }
+
+  /**
+   * Traces boundary pixels in sequential order using Moore neighborhood chain-code following.
+   *
+   * Algorithm:
+   * 1. Start from the topmost-leftmost boundary pixel
+   * 2. At each step, search 8-connected neighbors in clockwise order
+   * 3. Follow the boundary until returning to the start pixel
+   *
+   * This creates an ordered perimeter path suitable for Douglas-Peucker approximation.
+   */
+  private traceContour(
+    boundaryPixels: Point[],
+    _edges: Uint8Array,
+    w: number,
+    h: number
+  ): Point[] {
+    if (boundaryPixels.length === 0) return [];
+
+    // Create a lookup set for fast boundary pixel checking
+    const boundarySet = new Set<number>();
+    for (const p of boundaryPixels) {
+      boundarySet.add(p.y * w + p.x);
+    }
+
+    // Find starting point: topmost-leftmost pixel for consistency
+    let startPoint = boundaryPixels[0];
+    for (const p of boundaryPixels) {
+      if (p.y < startPoint.y || (p.y === startPoint.y && p.x < startPoint.x)) {
+        startPoint = p;
+      }
+    }
+
+    const orderedBoundary: Point[] = [];
+    const visited = new Set<number>();
+
+    // Moore neighborhood: 8 directions in clockwise order starting from top
+    // [dy, dx] pairs: N, NE, E, SE, S, SW, W, NW
+    const directions = [
+      [-1, 0], [-1, 1], [0, 1], [1, 1],
+      [1, 0], [1, -1], [0, -1], [-1, -1]
+    ];
+
+    let current = startPoint;
+    let dirIdx = 0; // Start searching from north
+    const maxIterations = boundaryPixels.length * 2; // Prevent infinite loops
+    let iterations = 0;
+
+    do {
+      const currentIdx = current.y * w + current.x;
+
+      if (visited.has(currentIdx)) {
+        break; // Completed the loop
+      }
+
+      visited.add(currentIdx);
+      orderedBoundary.push({ x: current.x, y: current.y });
+
+      // Search for next boundary pixel in clockwise order
+      let found = false;
+      const searchStart = (dirIdx + 5) % 8; // Start search from 5 steps back (backtrack strategy)
+
+      for (let i = 0; i < 8; i++) {
+        const searchDirIdx = (searchStart + i) % 8;
+        const [dy, dx] = directions[searchDirIdx];
+        const nx = current.x + dx;
+        const ny = current.y + dy;
+
+        if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+          const nIdx = ny * w + nx;
+
+          if (boundarySet.has(nIdx) && !visited.has(nIdx)) {
+            current = { x: nx, y: ny };
+            dirIdx = searchDirIdx;
+            found = true;
+            break;
+          }
+        }
+      }
+
+      if (!found) {
+        // No unvisited neighbor found, check if we can close the loop
+        for (let i = 0; i < 8; i++) {
+          const [dy, dx] = directions[i];
+          const nx = current.x + dx;
+          const ny = current.y + dy;
+
+          if (nx === startPoint.x && ny === startPoint.y) {
+            // Successfully closed the loop
+            return orderedBoundary;
+          }
+        }
+
+        break; // Cannot continue tracing
+      }
+
+      iterations++;
+    } while (iterations < maxIterations &&
+             (current.x !== startPoint.x || current.y !== startPoint.y || orderedBoundary.length === 1));
+
+    // Return ordered boundary if we traced a significant portion
+    return orderedBoundary.length >= 4 ? orderedBoundary : [];
+  }
+
+  /**
+   * Fallback method: Sorts boundary pixels by angle from centroid.
+   * Used when chain tracing fails to produce a complete boundary.
+   */
+  private sortBoundaryByAngle(boundaryPixels: Point[]): Point[] {
+    if (boundaryPixels.length === 0) return [];
+
+    // Calculate centroid
+    const centroid = {
+      x: boundaryPixels.reduce((sum, p) => sum + p.x, 0) / boundaryPixels.length,
+      y: boundaryPixels.reduce((sum, p) => sum + p.y, 0) / boundaryPixels.length
+    };
+
+    // Sort by angle from centroid
+    const sorted = [...boundaryPixels].sort((a, b) => {
+      const angleA = Math.atan2(a.y - centroid.y, a.x - centroid.x);
+      const angleB = Math.atan2(b.y - centroid.y, b.x - centroid.x);
+      return angleA - angleB;
+    });
+
+    return sorted;
   }
 
   private approximateRectangle(contour: Point[], w: number, h: number): Point[] | null {
+    // All operations in pixel space until final normalization
     if (contour.length < 4) return null;
 
     const epsilon = 0.02 * this.contourPerimeter(contour);
     const approx = this.douglasPeucker(contour, epsilon);
 
+    let quad: Point[];
     if (approx.length !== 4) {
-      return this.findBestQuadrilateral(contour);
+      const fallback = this.findBestQuadrilateral(contour, w, h);
+      if (!fallback) return null;
+      quad = fallback;
+    } else {
+      quad = this.orderPoints(approx);
     }
 
-    return this.orderPoints(approx);
+    // Reject degenerate rectangles with duplicate corners or insufficient area
+    // This is the critical validation point - only validate final quadrilaterals
+    if (!this.isValidQuadrilateral(quad, w, h)) {
+      return null;
+    }
+
+    return quad;
   }
 
   private contourPerimeter(contour: Point[]): number {
@@ -552,7 +782,7 @@ export class ComicEdgeDetector {
     return numerator / Math.sqrt(lenSq);
   }
 
-  private findBestQuadrilateral(contour: Point[]): Point[] | null {
+  private findBestQuadrilateral(contour: Point[], w: number, h: number): Point[] | null {
     if (contour.length < 4) return null;
 
     const minX = contour.reduce((min, p) => Math.min(min, p.x), Infinity);
@@ -584,10 +814,22 @@ export class ComicEdgeDetector {
       return dist < closestDist ? p : closest;
     });
 
-    return [topLeft, topRight, bottomRight, bottomLeft];
+    const quad = [topLeft, topRight, bottomRight, bottomLeft];
+
+    // Validate quadrilateral has four distinct corners and minimum area
+    if (!this.isValidQuadrilateral(quad, w, h)) {
+      console.debug('Rejected best quadrilateral: duplicate corners or insufficient area');
+      return null;
+    }
+
+    return quad;
   }
 
   private orderPoints(points: Point[]): Point[] {
+    if (points.length !== 4) {
+      return points;
+    }
+
     const sorted = [...points];
 
     sorted.sort((a, b) => (a.x + a.y) - (b.x + b.y));
@@ -616,6 +858,7 @@ export class ComicEdgeDetector {
 
     const confidence = Math.min(0.85, 0.5 + (lines.length / 20) * 0.35);
 
+    // Final conversion to normalized coordinates
     return {
       points: this.normalizePoints(rectangle, w, h),
       confidence,
@@ -697,12 +940,20 @@ export class ComicEdgeDetector {
       return null;
     }
 
-    return [
+    const rect = [
       { x: Math.max(0, Math.min(w, topLeft.x)), y: Math.max(0, Math.min(h, topLeft.y)) },
       { x: Math.max(0, Math.min(w, topRight.x)), y: Math.max(0, Math.min(h, topRight.y)) },
       { x: Math.max(0, Math.min(w, bottomRight.x)), y: Math.max(0, Math.min(h, bottomRight.y)) },
       { x: Math.max(0, Math.min(w, bottomLeft.x)), y: Math.max(0, Math.min(h, bottomLeft.y)) }
     ];
+
+    // Validate Hough line intersections form valid quadrilateral
+    if (!this.isValidQuadrilateral(rect, w, h)) {
+      console.debug('Rejected Hough rectangle: invalid geometry (duplicate corners or insufficient area)');
+      return null;
+    }
+
+    return rect;
   }
 
   private lineIntersection(
@@ -789,8 +1040,15 @@ export class ComicEdgeDetector {
       { x: minX, y: maxY }
     ];
 
+    // Validate scan-based rectangle meets geometric requirements
+    if (!this.isValidQuadrilateral(rect, w, h)) {
+      console.debug('Rejected scan rectangle: failed validation (duplicate corners or insufficient area)');
+      return this.getDefaultResult();
+    }
+
     const confidence = this.scoreRectangle(rect, w, h, edges);
 
+    // Convert validated pixel coordinates to normalized space
     return {
       points: this.normalizePoints(rect, w, h),
       confidence: Math.min(confidence, 0.75),
@@ -877,5 +1135,122 @@ export class ComicEdgeDetector {
       confidence: 0.3,
       method: 'Default'
     };
+  }
+
+  // ========== Validation Helper Methods ==========
+
+  /**
+   * Calculates Euclidean distance between two points.
+   */
+  private pointDistance(p1: Point, p2: Point): number {
+    return Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+  }
+
+  /**
+   * Counts the number of spatially distinct points in an array.
+   * Points closer than minDistance are considered duplicates.
+   * Optimized with spatial hashing for large point arrays.
+   */
+  private countUniquePoints(points: Point[], minDistance: number): number {
+    if (points.length === 0) return 0;
+    if (points.length <= 4) {
+      // Fast path for small arrays (quadrilaterals)
+      const unique: Point[] = [];
+      for (const point of points) {
+        let isDuplicate = false;
+        for (const uniquePoint of unique) {
+          const dx = point.x - uniquePoint.x;
+          const dy = point.y - uniquePoint.y;
+          if (dx * dx + dy * dy < minDistance * minDistance) {
+            isDuplicate = true;
+            break;
+          }
+        }
+        if (!isDuplicate) {
+          unique.push(point);
+        }
+      }
+      return unique.length;
+    }
+
+    // For large arrays, use sampling instead of checking all points
+    // This is safe because we only need to know if there are "enough" unique points
+    const sampleSize = Math.min(20, points.length);
+    const step = Math.floor(points.length / sampleSize);
+    const sampled: Point[] = [];
+    for (let i = 0; i < points.length; i += step) {
+      sampled.push(points[i]);
+    }
+
+    let uniqueCount = 0;
+    const checked: Point[] = [];
+    for (const point of sampled) {
+      let isDuplicate = false;
+      for (const checkedPoint of checked) {
+        const dx = point.x - checkedPoint.x;
+        const dy = point.y - checkedPoint.y;
+        if (dx * dx + dy * dy < minDistance * minDistance) {
+          isDuplicate = true;
+          break;
+        }
+      }
+      if (!isDuplicate) {
+        checked.push(point);
+        uniqueCount++;
+      }
+    }
+
+    // Scale up the estimate based on sample ratio
+    return Math.floor(uniqueCount * (points.length / sampleSize));
+  }
+
+  /**
+   * Verifies that a point array contains exactly 4 spatially distinct points.
+   * Used to validate quadrilaterals have non-duplicate corners.
+   */
+  private hasFourDistinctPoints(points: Point[], minDistance: number): boolean {
+    if (points.length !== 4) return false;
+    return this.countUniquePoints(points, minDistance) === 4;
+  }
+
+  /**
+   * Checks if a quadrilateral has sufficient area relative to image size.
+   * Rejects extremely small or collapsed quadrilaterals.
+   */
+  private hasMinimumArea(points: Point[], w: number, h: number): boolean {
+    const area = this.rectangleArea(points);
+    const imageArea = w * h;
+    const areaRatio = area / imageArea;
+    return areaRatio >= this.MIN_AREA_RATIO;
+  }
+
+  /**
+   * Comprehensive validation for quadrilateral geometry.
+   * Ensures points are distinct, area is sufficient, and geometry is valid.
+   */
+  private isValidQuadrilateral(points: Point[], w: number, h: number): boolean {
+    if (points.length !== 4) return false;
+
+    // Check corners are spatially distinct (3% of diagonal minimum)
+    const diagonal = Math.sqrt(w * w + h * h);
+    const minCornerDistance = this.MIN_CORNER_DISTANCE_RATIO * diagonal;
+
+    if (!this.hasFourDistinctPoints(points, minCornerDistance)) {
+      return false;
+    }
+
+    // Check minimum area (5% of image area)
+    if (!this.hasMinimumArea(points, w, h)) {
+      return false;
+    }
+
+    // Verify all points are within image bounds
+    for (const p of points) {
+      if (p.x < 0 || p.x > w || p.y < 0 || p.y > h) {
+        return false;
+      }
+    }
+
+    return true;
   }
 }
