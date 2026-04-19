@@ -62,7 +62,7 @@ export function ForgotPassword() {
       <div className="w-full max-w-md space-y-6">
         <div className="text-center flex flex-col items-center">
           <img
-            src="/ChatGPT_Image_Mar_18,_2026,_09_08_29_PM.png"
+            src="/ChatGPT_Image_Mar_18,_2026,_09_08_29_PM copy.png"
             alt="QuickStack"
             className="w-64 h-auto mb-1"
           />
