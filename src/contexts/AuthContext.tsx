@@ -164,20 +164,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteAccount = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) throw new Error('No active session');
-
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const response = await fetch(`${supabaseUrl}/functions/v1/delete-account`, {
+    const { data, error } = await supabase.functions.invoke('delete-account', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      },
     });
 
-    if (!response.ok) {
-      const data = await response.json();
+    if (error) {
+      throw new Error(error.message || 'Failed to delete account');
+    }
+
+    if (data && !data.success) {
       throw new Error(data.error || 'Failed to delete account');
     }
 

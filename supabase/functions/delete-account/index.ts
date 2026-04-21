@@ -1,10 +1,14 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { requireAuth, getCorsHeaders } from "../_shared/auth.ts";
+import { createClient } from "npm:@supabase/supabase-js@2.57.4";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Authorization, X-Client-Info, Apikey",
+};
 
 Deno.serve(async (req: Request) => {
-  const origin = req.headers.get("origin");
-  const corsHeaders = getCorsHeaders(origin);
-
   if (req.method === "OPTIONS") {
     return new Response(null, {
       status: 200,
@@ -13,26 +17,62 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { user, serviceClient } = await requireAuth(req);
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: "Missing authorization header" }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const {
+      data: { user },
+      error: authError,
+    } = await userClient.auth.getUser();
+
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({
+          error: "Unauthorized",
+          details: authError?.message || "Invalid or expired token",
+        }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const serviceClient = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
 
     const { data: storageFiles } = await serviceClient.storage
       .from("comic-covers")
       .list(user.id);
 
     if (storageFiles && storageFiles.length > 0) {
-      const filePaths = storageFiles.map((f) => `${user.id}/${f.name}`);
+      const filePaths = storageFiles.map(
+        (f: { name: string }) => `${user.id}/${f.name}`
+      );
       await serviceClient.storage.from("comic-covers").remove(filePaths);
     }
 
-    await serviceClient
-      .from("comics")
-      .delete()
-      .eq("user_id", user.id);
+    await serviceClient.from("comics").delete().eq("user_id", user.id);
 
-    await serviceClient
-      .from("wishlist")
-      .delete()
-      .eq("user_id", user.id);
+    await serviceClient.from("wishlist").delete().eq("user_id", user.id);
 
     await serviceClient
       .from("beta_keys")
@@ -44,12 +84,10 @@ Deno.serve(async (req: Request) => {
       .delete()
       .eq("user_id", user.id);
 
-    await serviceClient
-      .from("user_profiles")
-      .delete()
-      .eq("id", user.id);
+    await serviceClient.from("user_profiles").delete().eq("id", user.id);
 
-    const { error: deleteError } = await serviceClient.auth.admin.deleteUser(user.id);
+    const { error: deleteError } =
+      await serviceClient.auth.admin.deleteUser(user.id);
 
     if (deleteError) {
       throw deleteError;
@@ -63,18 +101,15 @@ Deno.serve(async (req: Request) => {
       }
     );
   } catch (error) {
-    if (error instanceof Response) {
-      return error;
-    }
-
     console.error("Unexpected error in delete-account:", error);
     return new Response(
       JSON.stringify({
-        error: error instanceof Error ? error.message : "Internal server error",
+        error:
+          error instanceof Error ? error.message : "Internal server error",
       }),
       {
         status: 500,
-        headers: { ...getCorsHeaders(req.headers.get("origin")), "Content-Type": "application/json" },
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       }
     );
   }
