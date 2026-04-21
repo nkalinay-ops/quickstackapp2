@@ -150,6 +150,7 @@ Deno.serve(async (req: Request) => {
       .update({
         redeemed_at: new Date().toISOString(),
         redeemed_by: userId,
+        is_active: false,
       })
       .eq("id", betaKey.id);
 
