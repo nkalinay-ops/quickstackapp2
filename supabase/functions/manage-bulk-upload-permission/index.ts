@@ -1,5 +1,12 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { requireAdmin, corsHeaders } from "../_shared/auth.ts";
+import { createClient } from "npm:@supabase/supabase-js@2.57.4";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Authorization, X-Client-Info, Apikey",
+};
 
 interface PermissionRequest {
   target_user_id: string;
@@ -12,8 +19,51 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // Use the strict two-client auth pattern
-    const { user, serviceClient } = await requireAdmin(req);
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: "Missing authorization header" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const {
+      data: { user },
+      error: authError,
+    } = await userClient.auth.getUser();
+
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const { data: profile } = await userClient
+      .from("user_profiles")
+      .select("is_admin")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (!profile?.is_admin) {
+      return new Response(
+        JSON.stringify({ error: "Forbidden: Admin access required" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const serviceClient = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
 
     const { target_user_id, grant }: PermissionRequest = await req.json();
 
@@ -37,13 +87,16 @@ Deno.serve(async (req: Request) => {
         };
 
     const { error: updateError } = await serviceClient
-      .from('user_profiles')
+      .from("user_profiles")
       .update(updateData)
-      .eq('id', target_user_id);
+      .eq("id", target_user_id);
 
     if (updateError) {
       return new Response(
-        JSON.stringify({ error: "Failed to update permission", details: updateError.message }),
+        JSON.stringify({
+          error: "Failed to update permission",
+          details: updateError.message,
+        }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -51,16 +104,16 @@ Deno.serve(async (req: Request) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: grant ? "Bulk upload permission granted" : "Bulk upload permission revoked",
+        message: grant
+          ? "Bulk upload permission granted"
+          : "Bulk upload permission revoked",
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
-    if (error instanceof Response) {
-      return error;
-    }
+    if (error instanceof Response) return error;
 
-    console.error('Error managing bulk upload permission:', error);
+    console.error("Error managing bulk upload permission:", error);
     return new Response(
       JSON.stringify({
         error: "Failed to manage permission",

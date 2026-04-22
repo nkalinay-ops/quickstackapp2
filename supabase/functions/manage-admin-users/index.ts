@@ -1,4 +1,12 @@
-import { requireAdmin, getCorsHeaders } from "../_shared/auth.ts";
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2.57.4";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Authorization, X-Client-Info, Apikey",
+};
 
 interface AdminActionRequest {
   action: "list_users" | "promote_admin" | "revoke_admin" | "terminate_user";
@@ -7,19 +15,56 @@ interface AdminActionRequest {
 }
 
 Deno.serve(async (req: Request) => {
-  const origin = req.headers.get("origin");
-  const corsHeaders = getCorsHeaders(origin);
-
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 200,
-      headers: corsHeaders,
-    });
+    return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
-    // Use the requireAdmin helper - this handles all auth and admin checking
-    const { user, serviceClient } = await requireAdmin(req);
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: "Missing authorization header" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const {
+      data: { user },
+      error: authError,
+    } = await userClient.auth.getUser();
+
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const { data: profile } = await userClient
+      .from("user_profiles")
+      .select("is_admin")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (!profile?.is_admin) {
+      return new Response(
+        JSON.stringify({ error: "Forbidden: Admin access required" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const serviceClient = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
 
     const body: AdminActionRequest = await req.json();
 
@@ -41,46 +86,40 @@ Deno.serve(async (req: Request) => {
         `)
         .order("created_at", { ascending: false });
 
-      if (usersError) {
-        throw usersError;
-      }
+      if (usersError) throw usersError;
 
-      const { data: authUsers, error: authError } = await serviceClient.auth.admin.listUsers();
+      const { data: authUsers, error: authUsersError } =
+        await serviceClient.auth.admin.listUsers();
 
-      if (authError) {
-        throw authError;
-      }
+      if (authUsersError) throw authUsersError;
 
-      const { data: terminations, error: terminationsError } = await serviceClient
-        .from("user_terminations")
-        .select("*");
+      const { data: terminations, error: terminationsError } =
+        await serviceClient.from("user_terminations").select("*");
 
-      if (terminationsError) {
-        throw terminationsError;
-      }
+      if (terminationsError) throw terminationsError;
 
       const authUsersMap = new Map(
-        authUsers.users.map((u) => [u.id, { email: u.email, last_sign_in_at: u.last_sign_in_at }])
+        authUsers.users.map((u: { id: string; email?: string; last_sign_in_at?: string }) => [
+          u.id,
+          { email: u.email, last_sign_in_at: u.last_sign_in_at },
+        ])
       );
 
       const terminationsMap = new Map(
-        terminations.map((t) => [t.user_id, t])
+        terminations.map((t: { user_id: string }) => [t.user_id, t])
       );
 
-      const enrichedUsers = users.map((user) => ({
-        ...user,
-        email: authUsersMap.get(user.id)?.email || null,
-        last_sign_in_at: authUsersMap.get(user.id)?.last_sign_in_at || null,
-        termination: terminationsMap.get(user.id) || null,
+      const enrichedUsers = users.map((u: { id: string }) => ({
+        ...u,
+        email: authUsersMap.get(u.id)?.email || null,
+        last_sign_in_at: authUsersMap.get(u.id)?.last_sign_in_at || null,
+        termination: terminationsMap.get(u.id) || null,
       }));
 
-      return new Response(
-        JSON.stringify({ users: enrichedUsers }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
+      return new Response(JSON.stringify({ users: enrichedUsers }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     if (body.action === "promote_admin" && body.userId) {
@@ -93,16 +132,11 @@ Deno.serve(async (req: Request) => {
         })
         .eq("id", body.userId);
 
-      if (updateError) {
-        throw updateError;
-      }
+      if (updateError) throw updateError;
 
       return new Response(
         JSON.stringify({ success: true, message: "User promoted to admin" }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -110,10 +144,7 @@ Deno.serve(async (req: Request) => {
       if (body.userId === user.id) {
         return new Response(
           JSON.stringify({ error: "Cannot revoke your own admin status" }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
@@ -126,16 +157,11 @@ Deno.serve(async (req: Request) => {
         })
         .eq("id", body.userId);
 
-      if (updateError) {
-        throw updateError;
-      }
+      if (updateError) throw updateError;
 
       return new Response(
         JSON.stringify({ success: true, message: "Admin privileges revoked" }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -143,14 +169,9 @@ Deno.serve(async (req: Request) => {
       if (body.userId === user.id) {
         return new Response(
           JSON.stringify({ error: "Cannot terminate your own account" }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-
-      console.log("Attempting to terminate user:", body.userId, "by:", user.id);
 
       const { data: existingTermination } = await serviceClient
         .from("user_terminations")
@@ -161,10 +182,7 @@ Deno.serve(async (req: Request) => {
       if (existingTermination) {
         return new Response(
           JSON.stringify({ error: "User is already terminated" }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
@@ -176,43 +194,27 @@ Deno.serve(async (req: Request) => {
           reason: body.reason || null,
         });
 
-      if (terminationError) {
-        console.error("Termination error:", terminationError);
-        throw terminationError;
-      }
-
-      console.log("User terminated successfully:", body.userId);
+      if (terminationError) throw terminationError;
 
       return new Response(
         JSON.stringify({ success: true, message: "User access terminated" }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    return new Response(
-      JSON.stringify({ error: "Invalid action" }),
-      {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
+    return new Response(JSON.stringify({ error: "Invalid action" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (error) {
-    if (error instanceof Response) {
-      return error;
-    }
+    if (error instanceof Response) return error;
 
     console.error("Unexpected error in manage-admin-users:", error);
     return new Response(
       JSON.stringify({
-        error: error instanceof Error ? error.message : "Internal server error"
+        error: error instanceof Error ? error.message : "Internal server error",
       }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
