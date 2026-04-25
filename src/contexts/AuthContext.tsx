@@ -98,8 +98,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
       });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       (async () => {
+        if (event === 'PASSWORD_RECOVERY') {
+          setUser(session?.user ?? null);
+          setLoading(false);
+          window.dispatchEvent(new CustomEvent('navigate', { detail: 'reset-password' }));
+          return;
+        }
         if (session?.user) {
           const isTerminated = await checkTerminationStatus(session.user.id);
           if (isTerminated) {

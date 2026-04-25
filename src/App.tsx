@@ -43,6 +43,10 @@ function AppContent() {
     const authFlowPages = ['reset-password', 'forgot-password', 'test-password-reset'];
     if (authFlowPages.includes(currentPageRef.current)) return;
 
+    // If there's a ?code= in the URL it's a PKCE recovery — wait for PASSWORD_RECOVERY event
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('code')) return;
+
     if (!user) {
       window.history.replaceState({}, '', window.location.pathname);
       setPage('auth');
