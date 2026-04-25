@@ -21,19 +21,15 @@ export function ResetPassword() {
     let timeoutId: NodeJS.Timeout;
 
     const authListener = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state change event:', event);
-
       if (!mounted) return;
 
       if (event === 'PASSWORD_RECOVERY') {
-        console.log('Password recovery event detected');
         if (mounted) {
           setHasValidSession(true);
           setVerifyingSession(false);
           window.history.replaceState({}, '', window.location.pathname + '?page=reset-password');
         }
       } else if (event === 'SIGNED_IN' && session) {
-        console.log('User signed in during password reset');
         if (mounted) {
           setHasValidSession(true);
           setVerifyingSession(false);
@@ -42,7 +38,6 @@ export function ResetPassword() {
     });
 
     const verifyPasswordResetSession = async () => {
-      console.log('Verifying password reset session...');
 
       const params = new URLSearchParams(window.location.search);
       const errorParam = params.get('error');
@@ -59,16 +54,28 @@ export function ResetPassword() {
         return;
       }
 
+      const code = params.get('code');
       const hash = window.location.hash;
-      console.log('URL hash:', hash ? 'present' : 'not present');
 
-      if (hash && hash.includes('access_token')) {
-        console.log('Found access token in hash, processing...');
+      if (code) {
+        // PKCE flow: exchange the one-time code for a session
+        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+        window.history.replaceState({}, '', window.location.pathname + '?page=reset-password');
+        if (exchangeError) {
+          if (mounted) {
+            setError('This password reset link has expired or is invalid. Please request a new one.');
+            setHasValidSession(false);
+            setVerifyingSession(false);
+          }
+          return;
+        }
+        // PASSWORD_RECOVERY event will fire via onAuthStateChange after exchange
+      } else if (hash && hash.includes('access_token')) {
+        // Implicit flow: token already in the hash, wait for Supabase to process it
         await new Promise(resolve => setTimeout(resolve, 500));
 
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
-          console.log('Session established from hash');
           if (mounted) {
             setHasValidSession(true);
             setVerifyingSession(false);
@@ -77,16 +84,13 @@ export function ResetPassword() {
         }
       } else {
         const { data: { session } } = await supabase.auth.getSession();
-        console.log('Current session:', session ? 'exists' : 'not found');
 
         if (session?.user) {
-          console.log('Valid session found');
           if (mounted) {
             setHasValidSession(true);
             setVerifyingSession(false);
           }
         } else {
-          console.log('No valid session found');
           if (mounted) {
             setError('No password reset token found. Please click the password reset link from your email.');
             setHasValidSession(false);
@@ -100,7 +104,6 @@ export function ResetPassword() {
 
     timeoutId = setTimeout(() => {
       if (mounted && verifyingSession) {
-        console.log('Session verification timeout');
         setError('Session verification timed out. Please request a new password reset link.');
         setVerifyingSession(false);
         setHasValidSession(false);

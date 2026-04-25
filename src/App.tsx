@@ -24,7 +24,9 @@ function AppContent() {
     const page = params.get('page');
 
     // Check for password reset/forgot password pages first (regardless of auth state)
-    if (page === 'reset-password') {
+    // Also detect PKCE code exchange (?code=) which Supabase sends for web password resets
+    const code = params.get('code');
+    if (page === 'reset-password' || (code && !page)) {
       setCurrentPage('reset-password');
       return;
     } else if (page === 'test-password-reset') {
