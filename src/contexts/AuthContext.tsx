@@ -62,7 +62,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    const SESSION_TIMEOUT_MS = 3000;
+    // Give more time when a PKCE code exchange is in progress (password recovery, OAuth, etc.)
+    const hasCodeInUrl = new URLSearchParams(window.location.search).has('code');
+    const SESSION_TIMEOUT_MS = hasCodeInUrl ? 15000 : 3000;
 
     let settled = false;
 

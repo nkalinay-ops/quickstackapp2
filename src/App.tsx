@@ -32,6 +32,10 @@ function AppContent() {
   useEffect(() => {
     if (isPasswordRecovery) return;
 
+    // Don't strip the URL or redirect while a PKCE code exchange is pending
+    const hasCodeInUrl = new URLSearchParams(window.location.search).has('code');
+    if (hasCodeInUrl && !user) return;
+
     if (!user) {
       window.history.replaceState({}, '', window.location.pathname);
       setCurrentPage('auth');
