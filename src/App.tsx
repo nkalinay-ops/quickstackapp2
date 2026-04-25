@@ -32,11 +32,6 @@ function AppContent() {
   useEffect(() => {
     if (isPasswordRecovery) return;
 
-    // Don't redirect while a Supabase auth callback is in progress (PKCE code or implicit token in hash)
-    const hasCodeInUrl = new URLSearchParams(window.location.search).has('code');
-    const hasTokenInHash = window.location.hash.includes('access_token') || window.location.hash.includes('type=recovery');
-    if ((hasCodeInUrl || hasTokenInHash) && !user) return;
-
     if (!user) {
       window.history.replaceState({}, '', window.location.pathname);
       setCurrentPage('auth');
