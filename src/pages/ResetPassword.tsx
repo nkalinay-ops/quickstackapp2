@@ -15,21 +15,26 @@ export function ResetPassword() {
   const [exchangeError, setExchangeError] = useState('');
 
   useEffect(() => {
-    const code = new URLSearchParams(window.location.search).get('code');
-    if (!code) {
-      setExchangeError('Invalid or missing reset link. Please request a new one.');
-      setExchanging(false);
-      return;
-    }
-
-    supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
-      if (error) {
-        setExchangeError('This reset link has expired or already been used. Please request a new one.');
+    // The Supabase client automatically exchanges the ?code= in the URL when
+    // detectSessionInUrl is true. We wait for the PASSWORD_RECOVERY event it
+    // emits after the exchange succeeds rather than calling exchangeCodeForSession
+    // ourselves, which would consume the code a second time and return "invalid".
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        window.history.replaceState({}, '', window.location.pathname);
+        setExchanging(false);
       }
-      // Clear the code from the URL so a refresh doesn't try to re-exchange
-      window.history.replaceState({}, '', window.location.pathname);
-      setExchanging(false);
     });
+
+    const timeout = setTimeout(() => {
+      setExchangeError('This reset link has expired or already been used. Please request a new one.');
+      setExchanging(false);
+    }, 10000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timeout);
+    };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {

@@ -54,11 +54,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    // If there's a ?code= in the URL this is a password-reset callback.
-    // ResetPassword handles the code exchange itself, so skip auth init here
-    // to avoid consuming the code before ResetPassword can use it.
-    const hasCode = new URLSearchParams(window.location.search).has('code');
-    if (hasCode) {
+    // If this is a password-reset callback (?code= or ?page=reset-password),
+    // skip auth init entirely. The Supabase client will auto-exchange the code
+    // and emit PASSWORD_RECOVERY, which ResetPassword.tsx handles directly.
+    const params = new URLSearchParams(window.location.search);
+    const isResetFlow = params.has('code') || params.get('page') === 'reset-password';
+    if (isResetFlow) {
       setLoading(false);
       return;
     }
@@ -133,7 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const resetPassword = async (email: string) => {
     const redirectTo = isNativePlatform()
       ? `${import.meta.env.VITE_SUPABASE_URL}/auth/v1/callback?redirect_to=quickstack://reset-password`
-      : `${window.location.origin}/?page=reset-password`;
+      : `${window.location.origin}/`;
     const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
     if (error) throw error;
   };
