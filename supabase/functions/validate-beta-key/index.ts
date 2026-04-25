@@ -132,6 +132,19 @@ Deno.serve(async (req: Request) => {
 
     const userId = authData.user.id;
 
+    // If signUp didn't return a session (can happen with rate limiting or email flow),
+    // explicitly sign in to get a valid session
+    let session = authData.session;
+    if (!session) {
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (!signInError && signInData.session) {
+        session = signInData.session;
+      }
+    }
+
     const { error: profileError } = await supabase
       .from("user_profiles")
       .update({
@@ -165,7 +178,7 @@ Deno.serve(async (req: Request) => {
           id: authData.user.id,
           email: authData.user.email,
         },
-        session: authData.session,
+        session,
       }),
       {
         status: 200,
