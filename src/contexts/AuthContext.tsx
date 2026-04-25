@@ -68,27 +68,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let settled = false;
 
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(hardTimeout);
+      fn();
+    };
+
     // Hard timeout fallback — prevents infinite spinner if exchange fails
     const TIMEOUT_MS = isPkceCallback ? 15000 : 3000;
     const hardTimeout = setTimeout(() => {
-      if (!settled) {
-        settled = true;
+      settle(() => {
         setUser(null);
         setLoading(false);
-      }
+      });
     }, TIMEOUT_MS);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       (async () => {
-        if (!settled) {
-          settled = true;
-          clearTimeout(hardTimeout);
-        }
+        // INITIAL_SESSION fires before the PKCE code is exchanged — skip it
+        // so we keep loading:true until PASSWORD_RECOVERY or SIGNED_IN arrives
+        if (event === 'INITIAL_SESSION' && isPkceCallback) return;
 
         if (event === 'PASSWORD_RECOVERY') {
-          setUser(session?.user ?? null);
-          setIsPasswordRecovery(true);
-          setLoading(false);
+          settle(() => {
+            setUser(session?.user ?? null);
+            setIsPasswordRecovery(true);
+            setLoading(false);
+          });
           return;
         }
 
@@ -96,51 +103,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const isTerminated = await checkTerminationStatus(session.user.id);
           if (isTerminated) {
             await supabase.auth.signOut();
-            setUser(null);
-            setIsAdmin(false);
+            settle(() => {
+              setUser(null);
+              setIsAdmin(false);
+              setLoading(false);
+            });
           } else {
-            setUser(session.user);
             await fetchAdminStatus(session.user.id);
+            settle(() => {
+              setUser(session.user);
+              setLoading(false);
+            });
           }
         } else {
-          setUser(null);
-          setIsAdmin(false);
+          settle(() => {
+            setUser(null);
+            setIsAdmin(false);
+            setLoading(false);
+          });
         }
-        setLoading(false);
       })();
     });
 
-    // When there's no PKCE code to exchange, getSession() resolves the initial state
-    // immediately. When there IS a code, onAuthStateChange handles everything.
-    if (!isPkceCallback) {
-      supabase.auth.getSession().then(async ({ data: { session } }) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(hardTimeout);
-        if (session?.user) {
-          const isTerminated = await checkTerminationStatus(session.user.id);
-          if (isTerminated) {
-            await supabase.auth.signOut();
-            setUser(null);
-            setIsAdmin(false);
-          } else {
-            setUser(session.user);
-            await fetchAdminStatus(session.user.id);
-          }
-        } else {
-          setUser(null);
-        }
-        setLoading(false);
-      }).catch(() => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(hardTimeout);
-        setUser(null);
-        setLoading(false);
-      });
-    }
-
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(hardTimeout);
+    };
   }, []);
 
   const signIn = async (email: string, password: string) => {
