@@ -1,20 +1,19 @@
 import { useState } from 'react';
-import { ArrowLeft, FlaskConical, ExternalLink, Copy, Check } from 'lucide-react';
+import { ArrowLeft, FlaskConical } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export function DevResetPassword() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [link, setLink] = useState('');
-  const [copied, setCopied] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setLink('');
     setLoading(true);
 
     try {
+      // Generate the recovery link via edge function (no email sent)
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-recovery-link`;
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -22,31 +21,46 @@ export function DevResetPassword() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
         },
-        body: JSON.stringify({
-          email,
-          redirectTo: window.location.origin + '/',
-        }),
+        body: JSON.stringify({ email, redirectTo: window.location.origin + '/' }),
       });
 
       const result = await response.json();
 
       if (!response.ok || result.error) {
         setError(result.error || 'Failed to generate recovery link');
+        setLoading(false);
         return;
       }
 
-      setLink(result.link);
+      // Extract token_hash and type from the generated link
+      // Link looks like: https://[project].supabase.co/auth/v1/verify?token=xxx&type=recovery&...
+      const url = new URL(result.link);
+      const tokenHash = url.searchParams.get('token');
+      const type = url.searchParams.get('type') as 'recovery';
+
+      if (!tokenHash || !type) {
+        setError('Could not parse recovery link token');
+        setLoading(false);
+        return;
+      }
+
+      // Verify the OTP directly — no page reload, fires PASSWORD_RECOVERY event in-process
+      const { error: verifyError } = await supabase.auth.verifyOtp({
+        token_hash: tokenHash,
+        type,
+      });
+
+      if (verifyError) {
+        setError(verifyError.message);
+        setLoading(false);
+        return;
+      }
+
+      // onAuthStateChange in AuthContext will receive PASSWORD_RECOVERY and show ResetPassword
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate recovery link');
-    } finally {
+      setError(err instanceof Error ? err.message : 'Something went wrong');
       setLoading(false);
     }
-  };
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(link);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -57,11 +71,11 @@ export function DevResetPassword() {
             <FlaskConical className="text-amber-400" size={28} />
           </div>
           <h2 className="text-2xl font-bold text-white mb-1">Dev: Password Reset Tester</h2>
-          <p className="text-gray-400 text-sm">Generates a real recovery link without sending an email</p>
+          <p className="text-gray-400 text-sm">Triggers the reset flow directly — no email sent</p>
         </div>
 
         <div className="bg-amber-950/40 border border-amber-800/50 rounded-lg px-4 py-3 text-amber-300 text-sm">
-          This page is only visible in development builds. It uses the admin API to generate a recovery link directly — no email is sent.
+          Development only. Generates a recovery token and verifies it in-process, skipping email entirely.
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 bg-gray-900 p-6 rounded-lg">
@@ -92,38 +106,9 @@ export function DevResetPassword() {
             disabled={loading}
             className="w-full py-3 bg-amber-700 hover:bg-amber-600 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Generating...' : 'Generate Recovery Link'}
+            {loading ? 'Starting reset flow...' : 'Start Password Reset'}
           </button>
         </form>
-
-        {link && (
-          <div className="bg-gray-900 p-5 rounded-lg space-y-3">
-            <p className="text-sm font-medium text-gray-300">Recovery link generated:</p>
-            <div className="bg-gray-800 rounded-lg p-3 text-xs text-gray-400 break-all font-mono leading-relaxed">
-              {link}
-            </div>
-            <div className="flex gap-2">
-              <a
-                href={link}
-                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
-              >
-                <ExternalLink size={16} />
-                Open Link (test the flow)
-              </a>
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2"
-              >
-                {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
-                {copied ? 'Copied' : 'Copy'}
-              </button>
-            </div>
-            <p className="text-xs text-gray-500">
-              Clicking "Open Link" simulates exactly what happens when a user clicks the link in their email.
-            </p>
-          </div>
-        )}
 
         <button
           type="button"
