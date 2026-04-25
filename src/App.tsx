@@ -37,7 +37,7 @@ function AppContent() {
     if (!user) {
       window.history.replaceState({}, '', window.location.pathname);
       setCurrentPage('auth');
-    } else {
+    } else if (currentPage === 'auth') {
       window.history.replaceState({}, '', window.location.pathname);
       setCurrentPage('dashboard');
     }
