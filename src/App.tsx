@@ -14,7 +14,8 @@ import { BulkUpload } from './pages/BulkUpload';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
 
-type Page = 'auth' | 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload' | 'forgot-password';
+type LayoutPage = 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload';
+type Page = 'auth' | 'forgot-password' | LayoutPage;
 
 function AppContent() {
   const { user, loading, isPasswordRecovery } = useAuth();
@@ -32,7 +33,7 @@ function AppContent() {
 
     if (!user) {
       window.history.replaceState({}, '', window.location.pathname);
-      setCurrentPage('auth' as Page);
+      setCurrentPage('auth');
     } else {
       window.history.replaceState({}, '', window.location.pathname);
       setCurrentPage('dashboard');
@@ -69,7 +70,7 @@ function AppContent() {
   }
 
   return (
-    <Layout currentPage={currentPage} onNavigate={setCurrentPage}>
+    <Layout currentPage={currentPage as LayoutPage} onNavigate={(p) => setCurrentPage(p)}>
       {currentPage === 'dashboard' && <Dashboard />}
       {currentPage === 'collection' && <Collection />}
       {currentPage === 'add' && <AddComic />}
