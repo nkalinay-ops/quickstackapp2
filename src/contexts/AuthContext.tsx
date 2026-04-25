@@ -62,9 +62,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    // Give more time when a PKCE code exchange is in progress (password recovery, OAuth, etc.)
+    // Give more time when a Supabase auth callback is in progress (PKCE code or implicit token in hash)
     const hasCodeInUrl = new URLSearchParams(window.location.search).has('code');
-    const SESSION_TIMEOUT_MS = hasCodeInUrl ? 15000 : 3000;
+    const hasTokenInHash = window.location.hash.includes('access_token') || window.location.hash.includes('type=recovery');
+    const SESSION_TIMEOUT_MS = (hasCodeInUrl || hasTokenInHash) ? 15000 : 3000;
 
     let settled = false;
 
