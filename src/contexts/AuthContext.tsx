@@ -7,6 +7,8 @@ type AuthContextType = {
   user: User | null;
   loading: boolean;
   isAdmin: boolean;
+  isPasswordRecovery: boolean;
+  clearPasswordRecovery: () => void;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -22,6 +24,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
+
+  const clearPasswordRecovery = () => {
+    setIsPasswordRecovery(false);
+    window.history.replaceState({}, '', window.location.pathname);
+  };
 
   const checkTerminationStatus = async (userId: string): Promise<boolean> => {
     const { data } = await supabase
@@ -102,8 +110,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       (async () => {
         if (event === 'PASSWORD_RECOVERY') {
           setUser(session?.user ?? null);
+          setIsPasswordRecovery(true);
           setLoading(false);
-          window.dispatchEvent(new CustomEvent('navigate', { detail: 'reset-password' }));
           return;
         }
         if (session?.user) {
@@ -147,7 +155,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
-    // Clear any URL parameters when signing out
     window.history.replaceState({}, '', window.location.pathname);
   };
 
@@ -155,7 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     const redirectTo = isNativePlatform()
       ? `${supabaseUrl}/auth/v1/callback?redirect_to=quickstack://reset-password`
-      : `${window.location.origin}/?page=reset-password`;
+      : `${window.location.origin}/`;
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo,
     });
@@ -187,7 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, isAdmin, signIn, signUp, signOut, refreshAdminStatus, resetPassword, updatePassword, deleteAccount }}>
+    <AuthContext.Provider value={{ user, loading, isAdmin, isPasswordRecovery, clearPasswordRecovery, signIn, signUp, signOut, refreshAdminStatus, resetPassword, updatePassword, deleteAccount }}>
       {children}
     </AuthContext.Provider>
   );

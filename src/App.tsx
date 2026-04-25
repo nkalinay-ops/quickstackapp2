@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { initCapacitor } from './lib/capacitorSetup';
 import { Auth } from './components/Auth';
@@ -13,53 +13,36 @@ import { AdminPanel } from './pages/AdminPanel';
 import { BulkUpload } from './pages/BulkUpload';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
-import { TestPasswordReset } from './pages/TestPasswordReset';
+
+type Page = 'auth' | 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload' | 'forgot-password';
 
 function AppContent() {
-  const { user, loading } = useAuth();
+  const { user, loading, isPasswordRecovery } = useAuth();
 
-  const getInitialPage = (): 'reset-password' | 'test-password-reset' | 'forgot-password' | 'dashboard' => {
+  const getInitialPage = (): Page => {
     const params = new URLSearchParams(window.location.search);
-    const page = params.get('page');
-    const code = params.get('code');
-    if (page === 'reset-password' || code) return 'reset-password';
-    if (page === 'test-password-reset') return 'test-password-reset';
-    if (page === 'forgot-password') return 'forgot-password';
+    if (params.get('page') === 'forgot-password') return 'forgot-password';
     return 'dashboard';
   };
 
-  const initialPage = getInitialPage();
-  const [currentPage, setCurrentPage] = useState<'auth' | 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload' | 'forgot-password' | 'reset-password' | 'test-password-reset'>(initialPage);
-
-  // Stable ref so the [user] effect always reads the latest page without needing it as a dep
-  const currentPageRef = useRef(initialPage);
-  const setPage = (page: typeof currentPage) => {
-    currentPageRef.current = page;
-    setCurrentPage(page);
-  };
+  const [currentPage, setCurrentPage] = useState<Page>(getInitialPage());
 
   useEffect(() => {
-    // Never override URL-driven auth flow pages regardless of auth state changes
-    const authFlowPages = ['reset-password', 'forgot-password', 'test-password-reset'];
-    if (authFlowPages.includes(currentPageRef.current)) return;
-
-    // If there's a ?code= in the URL it's a PKCE recovery — wait for PASSWORD_RECOVERY event
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('code')) return;
+    if (isPasswordRecovery) return;
 
     if (!user) {
       window.history.replaceState({}, '', window.location.pathname);
-      setPage('auth');
+      setCurrentPage('auth' as Page);
     } else {
       window.history.replaceState({}, '', window.location.pathname);
-      setPage('dashboard');
+      setCurrentPage('dashboard');
     }
-  }, [user]);
+  }, [user, isPasswordRecovery]);
 
   useEffect(() => {
     const handleNavigate = (event: Event) => {
       const customEvent = event as CustomEvent;
-      setPage(customEvent.detail);
+      setCurrentPage(customEvent.detail as Page);
     };
     window.addEventListener('navigate', handleNavigate);
     return () => window.removeEventListener('navigate', handleNavigate);
@@ -73,16 +56,12 @@ function AppContent() {
     );
   }
 
-  if (currentPage === 'forgot-password') {
-    return <ForgotPassword />;
-  }
-
-  if (currentPage === 'reset-password') {
+  if (isPasswordRecovery) {
     return <ResetPassword />;
   }
 
-  if (currentPage === 'test-password-reset') {
-    return <TestPasswordReset />;
+  if (currentPage === 'forgot-password') {
+    return <ForgotPassword />;
   }
 
   if (!user) {
@@ -90,7 +69,7 @@ function AppContent() {
   }
 
   return (
-    <Layout currentPage={currentPage} onNavigate={setPage}>
+    <Layout currentPage={currentPage} onNavigate={setCurrentPage}>
       {currentPage === 'dashboard' && <Dashboard />}
       {currentPage === 'collection' && <Collection />}
       {currentPage === 'add' && <AddComic />}
