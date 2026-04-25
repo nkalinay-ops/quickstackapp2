@@ -14,108 +14,62 @@ export function ResetPassword() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [verifyingSession, setVerifyingSession] = useState(true);
   const [hasValidSession, setHasValidSession] = useState(false);
-  const { updatePassword, user } = useAuth();
+  const { updatePassword } = useAuth();
 
   useEffect(() => {
     let mounted = true;
-    let timeoutId: NodeJS.Timeout;
 
-    const authListener = supabase.auth.onAuthStateChange(async (event, session) => {
+    // Check for error params (e.g. expired link redirected back with ?error=...)
+    const params = new URLSearchParams(window.location.search);
+    const errorParam = params.get('error');
+    const errorDescription = params.get('error_description');
+    if (errorParam) {
+      setError(errorDescription?.includes('expired') || errorDescription?.includes('invalid')
+        ? 'This password reset link has expired or is invalid. Please request a new one.'
+        : errorDescription || 'An error occurred. Please try again.');
+      setVerifyingSession(false);
+      setHasValidSession(false);
+      return;
+    }
+
+    // With PKCE + detectSessionInUrl:true, the Supabase client auto-exchanges the ?code=
+    // param during initialization and fires SIGNED_IN via onAuthStateChange.
+    // We just need to listen for that event (or check if a session already exists).
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
-
-      if (event === 'PASSWORD_RECOVERY') {
-        if (mounted) {
-          setHasValidSession(true);
-          setVerifyingSession(false);
-          window.history.replaceState({}, '', window.location.pathname + '?page=reset-password');
-        }
-      } else if (event === 'SIGNED_IN' && session) {
-        if (mounted) {
-          setHasValidSession(true);
-          setVerifyingSession(false);
-        }
+      if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && session)) {
+        window.history.replaceState({}, '', window.location.pathname + '?page=reset-password');
+        setHasValidSession(true);
+        setVerifyingSession(false);
       }
     });
 
-    const verifyPasswordResetSession = async () => {
-
-      const params = new URLSearchParams(window.location.search);
-      const errorParam = params.get('error');
-      const errorDescription = params.get('error_description');
-
-      if (errorParam) {
-        if (errorDescription?.includes('expired') || errorDescription?.includes('invalid')) {
-          setError('This password reset link has expired or is invalid. Please request a new one.');
-        } else {
-          setError(errorDescription || 'An error occurred. Please try again.');
-        }
-        setVerifyingSession(false);
-        setHasValidSession(false);
-        return;
-      }
-
-      const code = params.get('code');
-      const hash = window.location.hash;
-
-      if (code) {
-        // PKCE flow: exchange the one-time code for a session
-        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+    // Also check if the session was already established before our listener registered
+    // (can happen if Supabase processed the code very quickly)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return;
+      if (session?.user) {
         window.history.replaceState({}, '', window.location.pathname + '?page=reset-password');
-        if (exchangeError) {
-          if (mounted) {
-            setError('This password reset link has expired or is invalid. Please request a new one.');
-            setHasValidSession(false);
-            setVerifyingSession(false);
-          }
-          return;
-        }
-        // PASSWORD_RECOVERY event will fire via onAuthStateChange after exchange
-      } else if (hash && hash.includes('access_token')) {
-        // Implicit flow: token already in the hash, wait for Supabase to process it
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          if (mounted) {
-            setHasValidSession(true);
-            setVerifyingSession(false);
-            window.history.replaceState({}, '', window.location.pathname + '?page=reset-password');
-          }
-        }
-      } else {
-        const { data: { session } } = await supabase.auth.getSession();
-
-        if (session?.user) {
-          if (mounted) {
-            setHasValidSession(true);
-            setVerifyingSession(false);
-          }
-        } else {
-          if (mounted) {
-            setError('No password reset token found. Please click the password reset link from your email.');
-            setHasValidSession(false);
-            setVerifyingSession(false);
-          }
-        }
+        setHasValidSession(true);
+        setVerifyingSession(false);
       }
-    };
+    });
 
-    verifyPasswordResetSession();
-
-    timeoutId = setTimeout(() => {
+    // Timeout fallback — if nothing fires after 10s, show an error
+    const timeoutId = setTimeout(() => {
       if (mounted && verifyingSession) {
-        setError('Session verification timed out. Please request a new password reset link.');
+        setError('This password reset link has expired or is invalid. Please request a new one.');
         setVerifyingSession(false);
         setHasValidSession(false);
       }
-    }, 15000);
+    }, 10000);
 
     return () => {
       mounted = false;
       clearTimeout(timeoutId);
-      authListener.data.subscription.unsubscribe();
+      subscription.unsubscribe();
     };
-  }, [verifyingSession]);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -137,7 +91,6 @@ export function ResetPassword() {
     try {
       await updatePassword(newPassword);
       setSuccess(true);
-      // Clear URL parameters before redirecting
       window.history.replaceState({}, '', window.location.pathname);
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent('navigate', { detail: 'dashboard' }));

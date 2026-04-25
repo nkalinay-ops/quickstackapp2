@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { initCapacitor } from './lib/capacitorSetup';
 import { Auth } from './components/Auth';
@@ -18,37 +18,43 @@ import { TestPasswordReset } from './pages/TestPasswordReset';
 function AppContent() {
   const { user, loading } = useAuth();
 
-  const getInitialPage = () => {
+  const getInitialPage = (): 'reset-password' | 'test-password-reset' | 'forgot-password' | 'dashboard' => {
     const params = new URLSearchParams(window.location.search);
     const page = params.get('page');
     const code = params.get('code');
-    if (page === 'reset-password' || (code && !page)) return 'reset-password' as const;
-    if (page === 'test-password-reset') return 'test-password-reset' as const;
-    if (page === 'forgot-password') return 'forgot-password' as const;
-    return 'dashboard' as const;
+    if (page === 'reset-password' || code) return 'reset-password';
+    if (page === 'test-password-reset') return 'test-password-reset';
+    if (page === 'forgot-password') return 'forgot-password';
+    return 'dashboard';
   };
 
   const [currentPage, setCurrentPage] = useState<'auth' | 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload' | 'forgot-password' | 'reset-password' | 'test-password-reset'>(getInitialPage);
 
+  // Stable ref so the [user] effect always reads the latest page without needing it as a dep
+  const currentPageRef = useRef(currentPage);
+  const setPage = (page: typeof currentPage) => {
+    currentPageRef.current = page;
+    setCurrentPage(page);
+  };
+
   useEffect(() => {
-    // Don't override auth-flow pages driven by URL params
-    if (currentPage === 'reset-password' || currentPage === 'forgot-password' || currentPage === 'test-password-reset') {
-      return;
-    }
+    // Never override URL-driven auth flow pages regardless of auth state changes
+    const authFlowPages = ['reset-password', 'forgot-password', 'test-password-reset'];
+    if (authFlowPages.includes(currentPageRef.current)) return;
 
     if (!user) {
       window.history.replaceState({}, '', window.location.pathname);
-      setCurrentPage('auth');
+      setPage('auth');
     } else {
       window.history.replaceState({}, '', window.location.pathname);
-      setCurrentPage('dashboard');
+      setPage('dashboard');
     }
   }, [user]);
 
   useEffect(() => {
     const handleNavigate = (event: Event) => {
       const customEvent = event as CustomEvent;
-      setCurrentPage(customEvent.detail);
+      setPage(customEvent.detail);
     };
     window.addEventListener('navigate', handleNavigate);
     return () => window.removeEventListener('navigate', handleNavigate);
@@ -79,7 +85,7 @@ function AppContent() {
   }
 
   return (
-    <Layout currentPage={currentPage} onNavigate={setCurrentPage}>
+    <Layout currentPage={currentPage} onNavigate={setPage}>
       {currentPage === 'dashboard' && <Dashboard />}
       {currentPage === 'collection' && <Collection />}
       {currentPage === 'add' && <AddComic />}
