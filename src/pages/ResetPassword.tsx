@@ -15,20 +15,40 @@ export function ResetPassword() {
   const [exchangeError, setExchangeError] = useState('');
 
   useEffect(() => {
-    // The Supabase client automatically exchanges the ?code= in the URL when
-    // detectSessionInUrl is true. We wait for the PASSWORD_RECOVERY event it
-    // emits after the exchange succeeds rather than calling exchangeCodeForSession
-    // ourselves, which would consume the code a second time and return "invalid".
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        window.history.replaceState({}, '', window.location.pathname);
+    let recoveryConfirmed = false;
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Auth event:', event);
+        if (event === 'PASSWORD_RECOVERY' || session) {
+          recoveryConfirmed = true;
+          window.history.replaceState({}, '', '/?page=reset-password');
+          setExchangeError('');
+          setExchanging(false);
+        }
+      }
+    );
+
+    const checkSession = async () => {
+      const { data, error } = await supabase.auth.getSession();
+      console.log('Reset password getSession:', data.session, error);
+      if (data.session) {
+        recoveryConfirmed = true;
+        setExchangeError('');
         setExchanging(false);
       }
-    });
+    };
 
-    const timeout = setTimeout(() => {
-      setExchangeError('This reset link has expired or already been used. Please request a new one.');
-      setExchanging(false);
+    checkSession();
+
+    const timeout = setTimeout(async () => {
+      await checkSession();
+      if (!recoveryConfirmed) {
+        setExchangeError(
+          'This reset link has expired or already been used. Please request a new one.'
+        );
+        setExchanging(false);
+      }
     }, 10000);
 
     return () => {
