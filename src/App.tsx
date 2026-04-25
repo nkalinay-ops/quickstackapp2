@@ -17,32 +17,29 @@ import { TestPasswordReset } from './pages/TestPasswordReset';
 
 function AppContent() {
   const { user, loading } = useAuth();
-  const [currentPage, setCurrentPage] = useState<'auth' | 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload' | 'forgot-password' | 'reset-password' | 'test-password-reset'>('dashboard');
 
-  useEffect(() => {
+  const getInitialPage = () => {
     const params = new URLSearchParams(window.location.search);
     const page = params.get('page');
-
-    // Check for password reset/forgot password pages first (regardless of auth state)
-    // Also detect PKCE code exchange (?code=) which Supabase sends for web password resets
     const code = params.get('code');
-    if (page === 'reset-password' || (code && !page)) {
-      setCurrentPage('reset-password');
-      return;
-    } else if (page === 'test-password-reset') {
-      setCurrentPage('test-password-reset');
-      return;
-    } else if (page === 'forgot-password') {
-      setCurrentPage('forgot-password');
+    if (page === 'reset-password' || (code && !page)) return 'reset-password' as const;
+    if (page === 'test-password-reset') return 'test-password-reset' as const;
+    if (page === 'forgot-password') return 'forgot-password' as const;
+    return 'dashboard' as const;
+  };
+
+  const [currentPage, setCurrentPage] = useState<'auth' | 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload' | 'forgot-password' | 'reset-password' | 'test-password-reset'>(getInitialPage);
+
+  useEffect(() => {
+    // Don't override auth-flow pages driven by URL params
+    if (currentPage === 'reset-password' || currentPage === 'forgot-password' || currentPage === 'test-password-reset') {
       return;
     }
 
-    // If user is logged out, show auth page
     if (!user) {
       window.history.replaceState({}, '', window.location.pathname);
       setCurrentPage('auth');
     } else {
-      // User is logged in, go to dashboard
       window.history.replaceState({}, '', window.location.pathname);
       setCurrentPage('dashboard');
     }
