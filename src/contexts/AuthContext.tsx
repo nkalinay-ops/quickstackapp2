@@ -7,8 +7,6 @@ type AuthContextType = {
   user: User | null;
   loading: boolean;
   isAdmin: boolean;
-  isPasswordRecovery: boolean;
-  clearPasswordRecovery: () => void;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -24,12 +22,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
-
-  const clearPasswordRecovery = () => {
-    setIsPasswordRecovery(false);
-    window.history.replaceState({}, '', window.location.pathname);
-  };
 
   const checkTerminationStatus = async (userId: string): Promise<boolean> => {
     const { data } = await supabase
@@ -62,65 +54,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    const hasCodeInUrl = new URLSearchParams(window.location.search).has('code');
-    const hasTokenInHash = window.location.hash.includes('access_token') || window.location.hash.includes('type=recovery');
-    const isPkceCallback = hasCodeInUrl || hasTokenInHash;
+    // If there's a ?code= in the URL this is a password-reset callback.
+    // ResetPassword handles the code exchange itself, so skip auth init here
+    // to avoid consuming the code before ResetPassword can use it.
+    const hasCode = new URLSearchParams(window.location.search).has('code');
+    if (hasCode) {
+      setLoading(false);
+      return;
+    }
 
     let settled = false;
 
-    const settle = (fn: () => void) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(hardTimeout);
-      fn();
-    };
-
-    // Hard timeout fallback — prevents infinite spinner if exchange fails
-    const TIMEOUT_MS = isPkceCallback ? 15000 : 3000;
     const hardTimeout = setTimeout(() => {
-      settle(() => {
+      if (!settled) {
+        settled = true;
         setUser(null);
         setLoading(false);
-      });
-    }, TIMEOUT_MS);
+      }
+    }, 3000);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       (async () => {
-        // INITIAL_SESSION fires before the PKCE code is exchanged — skip it
-        // so we keep loading:true until PASSWORD_RECOVERY or SIGNED_IN arrives
-        if (event === 'INITIAL_SESSION' && isPkceCallback) return;
+        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+          if (!settled) {
+            settled = true;
+            clearTimeout(hardTimeout);
+          }
 
-        if (event === 'PASSWORD_RECOVERY') {
-          settle(() => {
-            setUser(session?.user ?? null);
-            setIsPasswordRecovery(true);
-            setLoading(false);
-          });
-          return;
-        }
-
-        if (session?.user) {
-          const isTerminated = await checkTerminationStatus(session.user.id);
-          if (isTerminated) {
-            await supabase.auth.signOut();
-            settle(() => {
+          if (session?.user) {
+            const isTerminated = await checkTerminationStatus(session.user.id);
+            if (isTerminated) {
+              await supabase.auth.signOut();
               setUser(null);
               setIsAdmin(false);
-              setLoading(false);
-            });
-          } else {
-            await fetchAdminStatus(session.user.id);
-            settle(() => {
+            } else {
+              await fetchAdminStatus(session.user.id);
               setUser(session.user);
-              setLoading(false);
-            });
-          }
-        } else {
-          settle(() => {
+            }
+          } else {
             setUser(null);
             setIsAdmin(false);
-            setLoading(false);
-          });
+          }
+          setLoading(false);
         }
       })();
     });
@@ -156,20 +131,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const resetPassword = async (email: string) => {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     const redirectTo = isNativePlatform()
-      ? `${supabaseUrl}/auth/v1/callback?redirect_to=quickstack://reset-password`
-      : `${window.location.origin}/`;
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo,
-    });
+      ? `${import.meta.env.VITE_SUPABASE_URL}/auth/v1/callback?redirect_to=quickstack://reset-password`
+      : `${window.location.origin}/?page=reset-password`;
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
     if (error) throw error;
   };
 
   const updatePassword = async (newPassword: string) => {
-    const { error } = await supabase.auth.updateUser({
-      password: newPassword,
-    });
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) throw error;
   };
 
@@ -191,7 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, isAdmin, isPasswordRecovery, clearPasswordRecovery, signIn, signUp, signOut, refreshAdminStatus, resetPassword, updatePassword, deleteAccount }}>
+    <AuthContext.Provider value={{ user, loading, isAdmin, signIn, signUp, signOut, refreshAdminStatus, resetPassword, updatePassword, deleteAccount }}>
       {children}
     </AuthContext.Provider>
   );

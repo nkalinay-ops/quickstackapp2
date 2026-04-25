@@ -16,13 +16,15 @@ import { ResetPassword } from './pages/ResetPassword';
 import { DevResetPassword } from './pages/DevResetPassword';
 
 type LayoutPage = 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload';
-type Page = 'auth' | 'forgot-password' | 'dev-reset' | LayoutPage;
+type Page = 'auth' | 'forgot-password' | 'reset-password' | 'dev-reset' | LayoutPage;
 
 function AppContent() {
-  const { user, loading, isPasswordRecovery } = useAuth();
+  const { user, loading } = useAuth();
 
   const getInitialPage = (): Page => {
     const params = new URLSearchParams(window.location.search);
+    if (params.get('page') === 'reset-password') return 'reset-password';
+    if (params.get('code')) return 'reset-password';
     if (params.get('page') === 'forgot-password') return 'forgot-password';
     return 'dashboard';
   };
@@ -30,7 +32,7 @@ function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>(getInitialPage());
 
   useEffect(() => {
-    if (isPasswordRecovery) return;
+    if (currentPage === 'reset-password' || currentPage === 'forgot-password') return;
 
     if (!user) {
       window.history.replaceState({}, '', window.location.pathname);
@@ -39,7 +41,7 @@ function AppContent() {
       window.history.replaceState({}, '', window.location.pathname);
       setCurrentPage('dashboard');
     }
-  }, [user, isPasswordRecovery]);
+  }, [user, currentPage]);
 
   useEffect(() => {
     const handleNavigate = (event: Event) => {
@@ -50,15 +52,8 @@ function AppContent() {
     return () => window.removeEventListener('navigate', handleNavigate);
   }, []);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <div className="text-gray-400">Loading...</div>
-      </div>
-    );
-  }
-
-  if (isPasswordRecovery) {
+  // Show reset-password immediately — it handles its own code exchange
+  if (currentPage === 'reset-password') {
     return <ResetPassword />;
   }
 
@@ -68,6 +63,14 @@ function AppContent() {
 
   if (currentPage === 'dev-reset' && import.meta.env.DEV) {
     return <DevResetPassword />;
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+        <div className="text-gray-400">Loading...</div>
+      </div>
+    );
   }
 
   if (!user) {

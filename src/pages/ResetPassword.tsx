@@ -1,17 +1,36 @@
-import { useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 import { PasswordStrength, validatePassword } from '../components/PasswordStrength';
-import { CheckCircle, Eye, EyeOff } from 'lucide-react';
+import { CheckCircle, Eye, EyeOff, Loader } from 'lucide-react';
 
 export function ResetPassword() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const { updatePassword, clearPasswordRecovery } = useAuth();
+  const [exchanging, setExchanging] = useState(true);
+  const [exchangeError, setExchangeError] = useState('');
+
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('code');
+    if (!code) {
+      setExchangeError('Invalid or missing reset link. Please request a new one.');
+      setExchanging(false);
+      return;
+    }
+
+    supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+      if (error) {
+        setExchangeError('This reset link has expired or already been used. Please request a new one.');
+      }
+      // Clear the code from the URL so a refresh doesn't try to re-exchange
+      window.history.replaceState({}, '', window.location.pathname);
+      setExchanging(false);
+    });
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,18 +47,19 @@ export function ResetPassword() {
       return;
     }
 
-    setLoading(true);
+    setSubmitting(true);
 
     try {
-      await updatePassword(newPassword);
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
       setSuccess(true);
       setTimeout(() => {
-        clearPasswordRecovery();
-      }, 2000);
+        window.dispatchEvent(new CustomEvent('navigate', { detail: 'auth' }));
+      }, 2500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update password');
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
@@ -52,10 +72,37 @@ export function ResetPassword() {
               <CheckCircle className="text-green-400" size={32} />
             </div>
             <h1 className="text-3xl font-bold text-white mb-2">Password updated</h1>
-            <p className="text-gray-400 mb-6">
-              Your password has been successfully updated. You'll be redirected to your dashboard shortly.
+            <p className="text-gray-400">
+              Your password has been successfully updated. Redirecting to sign in...
             </p>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (exchanging) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <Loader className="text-blue-400 animate-spin" size={32} />
+          <p className="text-gray-400">Verifying reset link...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (exchangeError) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+        <div className="w-full max-w-md text-center space-y-4">
+          <div className="text-red-400 bg-red-950 p-4 rounded-lg">{exchangeError}</div>
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'forgot-password' }))}
+            className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+          >
+            Request a new link
+          </button>
         </div>
       </div>
     );
@@ -88,7 +135,7 @@ export function ResetPassword() {
                 required
                 className="w-full px-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 pr-12"
                 placeholder="••••••••"
-                disabled={loading}
+                disabled={submitting}
               />
               <button
                 type="button"
@@ -115,7 +162,7 @@ export function ResetPassword() {
                 required
                 className="w-full px-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 pr-12"
                 placeholder="••••••••"
-                disabled={loading}
+                disabled={submitting}
               />
               <button
                 type="button"
@@ -136,10 +183,10 @@ export function ResetPassword() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={submitting}
             className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Updating...' : 'Update Password'}
+            {submitting ? 'Updating...' : 'Update Password'}
           </button>
         </form>
       </div>
