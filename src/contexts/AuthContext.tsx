@@ -110,12 +110,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
+    console.log('Login successful');
+
+    const { data: { session } } = await supabase.auth.getSession();
+    console.log('Session after login:', session);
 
     if (data.user) {
-      const isTerminated = await checkTerminationStatus(data.user.id);
-      if (isTerminated) {
+      const terminationData = await supabase
+        .from('user_terminations')
+        .select('user_id')
+        .eq('user_id', data.user.id)
+        .maybeSingle();
+      console.log('Termination check result:', terminationData.data);
+
+      if (terminationData.data) {
         await supabase.auth.signOut();
         throw new Error('Access denied. Please contact support if you believe this is an error.');
+      }
+
+      if (session) {
+        await fetchAdminStatus(data.user.id);
+        setUser(data.user);
+        console.log('Navigating to dashboard');
+        window.dispatchEvent(new CustomEvent('navigate', { detail: 'dashboard' }));
       }
     }
   };
