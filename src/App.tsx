@@ -28,10 +28,11 @@ function AppContent() {
     return 'dashboard';
   };
 
-  const [currentPage, setCurrentPage] = useState<'auth' | 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload' | 'forgot-password' | 'reset-password' | 'test-password-reset'>(getInitialPage);
+  const initialPage = getInitialPage();
+  const [currentPage, setCurrentPage] = useState<'auth' | 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload' | 'forgot-password' | 'reset-password' | 'test-password-reset'>(initialPage);
 
   // Stable ref so the [user] effect always reads the latest page without needing it as a dep
-  const currentPageRef = useRef(currentPage);
+  const currentPageRef = useRef(initialPage);
   const setPage = (page: typeof currentPage) => {
     currentPageRef.current = page;
     setCurrentPage(page);
