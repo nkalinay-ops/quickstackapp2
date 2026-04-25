@@ -135,6 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const redirectTo = isNativePlatform()
       ? `${import.meta.env.VITE_SUPABASE_URL}/auth/v1/callback?redirect_to=quickstack://reset-password`
       : `${window.location.origin}/?page=reset-password`;
+    console.log('Password reset redirectTo:', redirectTo);
     const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
     if (error) throw error;
   };
