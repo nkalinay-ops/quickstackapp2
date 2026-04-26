@@ -32,7 +32,9 @@ function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>(getInitialPage());
 
   useEffect(() => {
-    if (currentPage === 'reset-password' || currentPage === 'forgot-password') return;
+    const params = new URLSearchParams(window.location.search);
+    const isResetUrl = params.has('code') || params.get('page') === 'reset-password';
+    if (currentPage === 'reset-password' || currentPage === 'forgot-password' || isResetUrl) return;
 
     if (!user) {
       window.history.replaceState({}, '', window.location.pathname);

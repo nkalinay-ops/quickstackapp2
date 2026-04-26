@@ -48,6 +48,12 @@ export function handleDeepLink(url: string): string | null {
       return 'reset-password';
     }
 
+    const code = searchParams.get('code');
+    if (code) {
+      window.history.replaceState({}, '', `/?page=reset-password&code=${encodeURIComponent(code)}`);
+      return 'reset-password';
+    }
+
     if (page) {
       return page;
     }

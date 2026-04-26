@@ -18,9 +18,9 @@ export function ResetPassword() {
     let recoveryConfirmed = false;
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      async (event) => {
         console.log('Auth event:', event);
-        if (event === 'PASSWORD_RECOVERY' || session) {
+        if (event === 'PASSWORD_RECOVERY') {
           recoveryConfirmed = true;
           window.history.replaceState({}, '', '/?page=reset-password');
           setExchangeError('');
@@ -30,9 +30,11 @@ export function ResetPassword() {
     );
 
     const checkSession = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const isResetUrl = params.has('code') || params.get('page') === 'reset-password';
       const { data, error } = await supabase.auth.getSession();
       console.log('Reset password getSession:', data.session, error);
-      if (data.session) {
+      if (data.session && isResetUrl) {
         recoveryConfirmed = true;
         setExchangeError('');
         setExchanging(false);
@@ -78,9 +80,6 @@ export function ResetPassword() {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
       setSuccess(true);
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('navigate', { detail: 'auth' }));
-      }, 2500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update password');
     } finally {
@@ -98,7 +97,7 @@ export function ResetPassword() {
             </div>
             <h1 className="text-3xl font-bold text-white mb-2">Password updated</h1>
             <p className="text-gray-400">
-              Your password has been successfully updated. Redirecting to sign in...
+              Your password has been successfully updated. Open the QuickStack app and sign in with your new password.
             </p>
           </div>
         </div>
