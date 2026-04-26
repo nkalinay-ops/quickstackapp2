@@ -13,47 +13,57 @@ import { AdminPanel } from './pages/AdminPanel';
 import { BulkUpload } from './pages/BulkUpload';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
-import { TestPasswordReset } from './pages/TestPasswordReset';
+import { DevResetPassword } from './pages/DevResetPassword';
+
+type LayoutPage = 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload';
+type Page = 'auth' | 'forgot-password' | 'reset-password' | 'dev-reset' | LayoutPage;
 
 function AppContent() {
   const { user, loading } = useAuth();
-  const [currentPage, setCurrentPage] = useState<'auth' | 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload' | 'forgot-password' | 'reset-password' | 'test-password-reset'>('dashboard');
+
+  const getInitialPage = (): Page => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('page') === 'reset-password') return 'reset-password';
+    if (params.get('code')) return 'reset-password';
+    if (params.get('page') === 'forgot-password') return 'forgot-password';
+    return 'dashboard';
+  };
+
+  const [currentPage, setCurrentPage] = useState<Page>(getInitialPage());
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const page = params.get('page');
+    if (currentPage === 'reset-password' || currentPage === 'forgot-password') return;
 
-    // Check for password reset/forgot password pages first (regardless of auth state)
-    if (page === 'reset-password') {
-      setCurrentPage('reset-password');
-      return;
-    } else if (page === 'test-password-reset') {
-      setCurrentPage('test-password-reset');
-      return;
-    } else if (page === 'forgot-password') {
-      setCurrentPage('forgot-password');
-      return;
-    }
-
-    // If user is logged out, show auth page
     if (!user) {
       window.history.replaceState({}, '', window.location.pathname);
       setCurrentPage('auth');
-    } else {
-      // User is logged in, go to dashboard
+    } else if (currentPage === 'auth') {
       window.history.replaceState({}, '', window.location.pathname);
       setCurrentPage('dashboard');
     }
-  }, [user]);
+  }, [user, currentPage]);
 
   useEffect(() => {
     const handleNavigate = (event: Event) => {
       const customEvent = event as CustomEvent;
-      setCurrentPage(customEvent.detail);
+      setCurrentPage(customEvent.detail as Page);
     };
     window.addEventListener('navigate', handleNavigate);
     return () => window.removeEventListener('navigate', handleNavigate);
   }, []);
+
+  // Show reset-password immediately — it handles its own code exchange
+  if (currentPage === 'reset-password') {
+    return <ResetPassword />;
+  }
+
+  if (currentPage === 'forgot-password') {
+    return <ForgotPassword />;
+  }
+
+  if (currentPage === 'dev-reset' && import.meta.env.DEV) {
+    return <DevResetPassword />;
+  }
 
   if (loading) {
     return (
@@ -63,24 +73,12 @@ function AppContent() {
     );
   }
 
-  if (currentPage === 'forgot-password') {
-    return <ForgotPassword />;
-  }
-
-  if (currentPage === 'reset-password') {
-    return <ResetPassword />;
-  }
-
-  if (currentPage === 'test-password-reset') {
-    return <TestPasswordReset />;
-  }
-
   if (!user) {
     return <Auth />;
   }
 
   return (
-    <Layout currentPage={currentPage} onNavigate={setCurrentPage}>
+    <Layout currentPage={currentPage as LayoutPage} onNavigate={(p) => setCurrentPage(p)}>
       {currentPage === 'dashboard' && <Dashboard />}
       {currentPage === 'collection' && <Collection />}
       {currentPage === 'add' && <AddComic />}
