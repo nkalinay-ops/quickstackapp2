@@ -18,9 +18,9 @@ export function ResetPassword() {
     let recoveryConfirmed = false;
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      async (event) => {
         console.log('Auth event:', event);
-        if (event === 'PASSWORD_RECOVERY' || session) {
+        if (event === 'PASSWORD_RECOVERY') {
           recoveryConfirmed = true;
           window.history.replaceState({}, '', '/?page=reset-password');
           setExchangeError('');
@@ -30,9 +30,11 @@ export function ResetPassword() {
     );
 
     const checkSession = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const isResetUrl = params.has('code') || params.get('page') === 'reset-password';
       const { data, error } = await supabase.auth.getSession();
       console.log('Reset password getSession:', data.session, error);
-      if (data.session) {
+      if (data.session && isResetUrl) {
         recoveryConfirmed = true;
         setExchangeError('');
         setExchanging(false);

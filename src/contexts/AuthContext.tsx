@@ -148,8 +148,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const resetPassword = async (email: string) => {
+    const redirectTo =
+      import.meta.env.VITE_PASSWORD_RESET_REDIRECT_URL ||
+      `${window.location.origin}/?page=reset-password`;
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: 'https://quickstackapp2.vercel.app/?page=reset-password',
+      redirectTo,
     });
     if (error) throw error;
   };
