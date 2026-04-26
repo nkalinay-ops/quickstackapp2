@@ -60,8 +60,12 @@ export function Auth() {
           const { error: sessionError } = await supabase.auth.setSession(result.session);
           if (sessionError) {
             console.error('Error setting session:', sessionError);
-            setError('Account created but failed to sign in. Please sign in manually.');
+            // Fall back to signing in with credentials
+            await signIn(email, password);
           }
+        } else {
+          // No session returned, sign in directly
+          await signIn(email, password);
         }
       } else {
         await signIn(email, password);
@@ -179,6 +183,15 @@ export function Auth() {
             >
               {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
             </button>
+            {import.meta.env.DEV && (
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'dev-reset' }))}
+                className="w-full text-amber-600 hover:text-amber-400 transition-colors text-xs font-mono"
+              >
+                [DEV] Test Password Reset
+              </button>
+            )}
           </div>
         </form>
       </div>

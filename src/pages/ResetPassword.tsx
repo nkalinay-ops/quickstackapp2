@@ -1,118 +1,61 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { PasswordStrength, validatePassword } from '../components/PasswordStrength';
-import { CheckCircle, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { PasswordStrength, validatePassword } from '../components/PasswordStrength';
+import { CheckCircle, Eye, EyeOff, Loader } from 'lucide-react';
 
 export function ResetPassword() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [verifyingSession, setVerifyingSession] = useState(true);
-  const [hasValidSession, setHasValidSession] = useState(false);
-  const { updatePassword, user } = useAuth();
+  const [exchanging, setExchanging] = useState(true);
+  const [exchangeError, setExchangeError] = useState('');
 
   useEffect(() => {
-    let mounted = true;
-    let timeoutId: NodeJS.Timeout;
+    let recoveryConfirmed = false;
 
-    const authListener = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state change event:', event);
-
-      if (!mounted) return;
-
-      if (event === 'PASSWORD_RECOVERY') {
-        console.log('Password recovery event detected');
-        if (mounted) {
-          setHasValidSession(true);
-          setVerifyingSession(false);
-          window.history.replaceState({}, '', window.location.pathname + '?page=reset-password');
-        }
-      } else if (event === 'SIGNED_IN' && session) {
-        console.log('User signed in during password reset');
-        if (mounted) {
-          setHasValidSession(true);
-          setVerifyingSession(false);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Auth event:', event);
+        if (event === 'PASSWORD_RECOVERY' || session) {
+          recoveryConfirmed = true;
+          window.history.replaceState({}, '', '/?page=reset-password');
+          setExchangeError('');
+          setExchanging(false);
         }
       }
-    });
+    );
 
-    const verifyPasswordResetSession = async () => {
-      console.log('Verifying password reset session...');
-
-      const params = new URLSearchParams(window.location.search);
-      const errorParam = params.get('error');
-      const errorDescription = params.get('error_description');
-
-      if (errorParam) {
-        if (errorDescription?.includes('expired') || errorDescription?.includes('invalid')) {
-          setError('This password reset link has expired or is invalid. Please request a new one.');
-        } else {
-          setError(errorDescription || 'An error occurred. Please try again.');
-        }
-        setVerifyingSession(false);
-        setHasValidSession(false);
-        return;
-      }
-
-      const hash = window.location.hash;
-      console.log('URL hash:', hash ? 'present' : 'not present');
-
-      if (hash && hash.includes('access_token')) {
-        console.log('Found access token in hash, processing...');
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          console.log('Session established from hash');
-          if (mounted) {
-            setHasValidSession(true);
-            setVerifyingSession(false);
-            window.history.replaceState({}, '', window.location.pathname + '?page=reset-password');
-          }
-        }
-      } else {
-        const { data: { session } } = await supabase.auth.getSession();
-        console.log('Current session:', session ? 'exists' : 'not found');
-
-        if (session?.user) {
-          console.log('Valid session found');
-          if (mounted) {
-            setHasValidSession(true);
-            setVerifyingSession(false);
-          }
-        } else {
-          console.log('No valid session found');
-          if (mounted) {
-            setError('No password reset token found. Please click the password reset link from your email.');
-            setHasValidSession(false);
-            setVerifyingSession(false);
-          }
-        }
+    const checkSession = async () => {
+      const { data, error } = await supabase.auth.getSession();
+      console.log('Reset password getSession:', data.session, error);
+      if (data.session) {
+        recoveryConfirmed = true;
+        setExchangeError('');
+        setExchanging(false);
       }
     };
 
-    verifyPasswordResetSession();
+    checkSession();
 
-    timeoutId = setTimeout(() => {
-      if (mounted && verifyingSession) {
-        console.log('Session verification timeout');
-        setError('Session verification timed out. Please request a new password reset link.');
-        setVerifyingSession(false);
-        setHasValidSession(false);
+    const timeout = setTimeout(async () => {
+      await checkSession();
+      if (!recoveryConfirmed) {
+        setExchangeError(
+          'This reset link has expired or already been used. Please request a new one.'
+        );
+        setExchanging(false);
       }
-    }, 15000);
+    }, 10000);
 
     return () => {
-      mounted = false;
-      clearTimeout(timeoutId);
-      authListener.data.subscription.unsubscribe();
+      subscription.unsubscribe();
+      clearTimeout(timeout);
     };
-  }, [verifyingSession]);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,62 +72,21 @@ export function ResetPassword() {
       return;
     }
 
-    setLoading(true);
+    setSubmitting(true);
 
     try {
-      await updatePassword(newPassword);
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
       setSuccess(true);
-      // Clear URL parameters before redirecting
-      window.history.replaceState({}, '', window.location.pathname);
       setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('navigate', { detail: 'dashboard' }));
-      }, 2000);
+        window.dispatchEvent(new CustomEvent('navigate', { detail: 'auth' }));
+      }, 2500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update password');
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
-
-  if (verifyingSession) {
-    return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
-        <div className="w-full max-w-md space-y-8">
-          <div className="text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-900 rounded-full mb-4 animate-pulse">
-              <div className="w-8 h-8 border-4 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
-            </div>
-            <h1 className="text-3xl font-bold text-white mb-2">Verifying your link...</h1>
-            <p className="text-gray-400 mb-6">
-              Please wait while we verify your password reset link.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!hasValidSession && error) {
-    return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
-        <div className="w-full max-w-md space-y-8">
-          <div className="text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-red-900 rounded-full mb-4">
-              <AlertCircle className="text-red-400" size={32} />
-            </div>
-            <h1 className="text-3xl font-bold text-white mb-2">Invalid or Expired Link</h1>
-            <p className="text-gray-400 mb-6">{error}</p>
-            <button
-              onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'forgot-password' }))}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
-            >
-              Request New Password Reset
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   if (success) {
     return (
@@ -195,10 +97,37 @@ export function ResetPassword() {
               <CheckCircle className="text-green-400" size={32} />
             </div>
             <h1 className="text-3xl font-bold text-white mb-2">Password updated</h1>
-            <p className="text-gray-400 mb-6">
-              Your password has been successfully updated. You'll be redirected to your dashboard shortly.
+            <p className="text-gray-400">
+              Your password has been successfully updated. Redirecting to sign in...
             </p>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (exchanging) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <Loader className="text-blue-400 animate-spin" size={32} />
+          <p className="text-gray-400">Verifying reset link...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (exchangeError) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+        <div className="w-full max-w-md text-center space-y-4">
+          <div className="text-red-400 bg-red-950 p-4 rounded-lg">{exchangeError}</div>
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'forgot-password' }))}
+            className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+          >
+            Request a new link
+          </button>
         </div>
       </div>
     );
@@ -231,7 +160,7 @@ export function ResetPassword() {
                 required
                 className="w-full px-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 pr-12"
                 placeholder="••••••••"
-                disabled={loading}
+                disabled={submitting}
               />
               <button
                 type="button"
@@ -258,7 +187,7 @@ export function ResetPassword() {
                 required
                 className="w-full px-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 pr-12"
                 placeholder="••••••••"
-                disabled={loading}
+                disabled={submitting}
               />
               <button
                 type="button"
@@ -279,10 +208,10 @@ export function ResetPassword() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={submitting}
             className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Updating...' : 'Update Password'}
+            {submitting ? 'Updating...' : 'Update Password'}
           </button>
         </form>
       </div>
