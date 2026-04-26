@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import { isNativePlatform } from '../lib/capacitorSetup';
+import { Capacitor } from '@capacitor/core';
 
 type AuthContextType = {
   user: User | null;
@@ -149,8 +149,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const resetPassword = async (email: string) => {
-    const redirectTo = isNativePlatform()
-      ? `${import.meta.env.VITE_SUPABASE_URL}/auth/v1/callback?redirect_to=quickstack://reset-password`
+    const platform = Capacitor.getPlatform();
+    const isNative = platform === 'android' || platform === 'ios';
+    console.log('Capacitor native?', Capacitor.isNativePlatform());
+    console.log('Capacitor platform:', platform);
+    const redirectTo = isNative
+      ? 'quickstack://reset-password'
       : `${window.location.origin}/?page=reset-password`;
     console.log('Password reset redirectTo:', redirectTo);
     const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
