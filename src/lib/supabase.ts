@@ -12,7 +12,7 @@ const isNative = Capacitor.isNativePlatform();
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    detectSessionInUrl: !isNative,
+    detectSessionInUrl: true,
     flowType: isNative ? 'implicit' : 'pkce',
     autoRefreshToken: true,
     persistSession: true,
