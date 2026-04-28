@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { ArrowLeft, Mail } from 'lucide-react';
+import { isNativePlatform } from '../lib/capacitorSetup';
+
+const HOSTED_FORGOT_PASSWORD_URL = 'https://quickstackapp2.vercel.app/?page=forgot-password';
 
 export function ForgotPassword() {
   const [email, setEmail] = useState('');
@@ -12,8 +15,13 @@ export function ForgotPassword() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
 
+    if (isNativePlatform()) {
+      window.open(HOSTED_FORGOT_PASSWORD_URL, '_system');
+      return;
+    }
+
+    setLoading(true);
     try {
       await resetPassword(email);
       setSuccess(true);
@@ -52,6 +60,45 @@ export function ForgotPassword() {
             <ArrowLeft size={20} />
             Back to Sign In
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (isNativePlatform()) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+        <div className="w-full max-w-md space-y-6">
+          <div className="text-center flex flex-col items-center">
+            <img
+              src="/ChatGPT_Image_Mar_18,_2026,_09_08_29_PM copy.png"
+              alt="QuickStack"
+              className="w-64 h-auto mb-1"
+            />
+            <h2 className="text-2xl font-bold text-white mb-2">Reset your password</h2>
+            <p className="text-gray-400">
+              We'll open a secure page in your browser where you can request a password reset link.
+            </p>
+          </div>
+
+          <div className="bg-gray-900 p-6 rounded-lg space-y-4">
+            <button
+              type="button"
+              onClick={() => window.open(HOSTED_FORGOT_PASSWORD_URL, '_system')}
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+            >
+              Open Password Reset Page
+            </button>
+
+            <button
+              type="button"
+              onClick={handleBackToLogin}
+              className="w-full text-gray-400 hover:text-white transition-colors text-sm flex items-center justify-center gap-2"
+            >
+              <ArrowLeft size={16} />
+              Back to Sign In
+            </button>
+          </div>
         </div>
       </div>
     );
