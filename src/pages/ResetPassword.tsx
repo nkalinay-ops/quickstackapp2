@@ -95,9 +95,9 @@ export function ResetPassword() {
             <div className="inline-flex items-center justify-center w-16 h-16 bg-green-900 rounded-full mb-4">
               <CheckCircle className="text-green-400" size={32} />
             </div>
-            <h1 className="text-3xl font-bold text-white mb-2">Password updated</h1>
+            <h1 className="text-3xl font-bold text-white mb-2">Password updated successfully</h1>
             <p className="text-gray-400">
-              Your password has been successfully updated. Open the QuickStack app and sign in with your new password.
+              Password updated successfully. You can now return to the QuickStack app and sign in with your new password.
             </p>
           </div>
         </div>
