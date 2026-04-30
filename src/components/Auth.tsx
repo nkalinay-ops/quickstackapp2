@@ -193,6 +193,30 @@ export function Auth() {
               </button>
             )}
           </div>
+
+          {isSignUp && (
+            <p className="text-xs text-gray-500 text-center pt-1">
+              By creating an account, you agree to our{' '}
+              <a
+                href="/terms.html"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-400 hover:text-blue-300 underline"
+              >
+                Terms of Service
+              </a>{' '}
+              and{' '}
+              <a
+                href="/privacy.html"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-400 hover:text-blue-300 underline"
+              >
+                Privacy Policy
+              </a>
+              .
+            </p>
+          )}
         </form>
       </div>
     </div>
