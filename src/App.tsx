@@ -18,7 +18,7 @@ type LayoutPage = 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' |
 type Page = 'auth' | 'forgot-password' | 'reset-password' | LayoutPage;
 
 function AppContent() {
-  const { user, loading } = useAuth();
+  const { user, loading, isAdmin } = useAuth();
 
   const getInitialPage = (): Page => {
     const params = new URLSearchParams(window.location.search);
@@ -81,8 +81,8 @@ function AppContent() {
       {currentPage === 'add' && <AddComic />}
       {currentPage === 'wishlist' && <Wishlist />}
       {currentPage === 'settings' && <Settings />}
-      {currentPage === 'beta-keys' && <BetaKeys />}
-      {currentPage === 'admin' && <AdminPanel />}
+      {currentPage === 'beta-keys' && isAdmin && <BetaKeys />}
+      {currentPage === 'admin' && isAdmin && <AdminPanel />}
       {currentPage === 'bulk-upload' && <BulkUpload />}
     </Layout>
   );
