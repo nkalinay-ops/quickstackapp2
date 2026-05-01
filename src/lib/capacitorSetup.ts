@@ -1,14 +1,23 @@
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
 
-export const HOSTED_PRIVACY_URL = 'https://quickstackapp2.vercel.app/privacy.html';
-export const HOSTED_TERMS_URL = 'https://quickstackapp2.vercel.app/terms.html';
+type LegalPage = 'privacy' | 'terms';
 
-export function openLegalLink(url: string): void {
+const NATIVE_LEGAL_URLS: Record<LegalPage, string> = {
+  privacy: 'https://quickstackapp2.vercel.app/privacy.html',
+  terms: 'https://quickstackapp2.vercel.app/terms.html',
+};
+
+const LEGAL_PATHS: Record<LegalPage, string> = {
+  privacy: '/privacy.html',
+  terms: '/terms.html',
+};
+
+export function openLegalLink(page: LegalPage): void {
   if (isNativePlatform()) {
-    window.open(url, '_system');
+    window.open(NATIVE_LEGAL_URLS[page], '_system');
   } else {
-    window.open(url, '_blank', 'noopener,noreferrer');
+    window.open(window.location.origin + LEGAL_PATHS[page], '_blank', 'noopener,noreferrer');
   }
 }
 

@@ -4,7 +4,7 @@ import { LogOut, User, Mail, Lock, Eye, EyeOff, Trash2, AlertTriangle, ExternalL
 import { PasswordStrength, validatePassword } from '../components/PasswordStrength';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { AlertModal } from '../components/AlertModal';
-import { openLegalLink, HOSTED_PRIVACY_URL, HOSTED_TERMS_URL } from '../lib/capacitorSetup';
+import { openLegalLink } from '../lib/capacitorSetup';
 
 export function Settings() {
   const { user, signOut, updatePassword, deleteAccount } = useAuth();
@@ -228,7 +228,7 @@ export function Settings() {
           <div className="border-t border-gray-800 pt-3 space-y-1">
             <button
               type="button"
-              onClick={() => openLegalLink(HOSTED_PRIVACY_URL)}
+              onClick={() => openLegalLink('privacy')}
               className="flex items-center justify-between w-full py-2 px-1 text-sm text-gray-400 hover:text-white transition-colors rounded-md hover:bg-gray-800 group"
             >
               <span>Privacy Policy</span>
@@ -236,7 +236,7 @@ export function Settings() {
             </button>
             <button
               type="button"
-              onClick={() => openLegalLink(HOSTED_TERMS_URL)}
+              onClick={() => openLegalLink('terms')}
               className="flex items-center justify-between w-full py-2 px-1 text-sm text-gray-400 hover:text-white transition-colors rounded-md hover:bg-gray-800 group"
             >
               <span>Terms of Service</span>
