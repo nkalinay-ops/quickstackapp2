@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { LogOut, User, Mail, Lock, Eye, EyeOff, Trash2, AlertTriangle } from 'lucide-react';
+import { LogOut, User, Mail, Lock, Eye, EyeOff, Trash2, AlertTriangle, ExternalLink } from 'lucide-react';
 import { PasswordStrength, validatePassword } from '../components/PasswordStrength';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { AlertModal } from '../components/AlertModal';
+import { openLegalLink } from '../lib/capacitorSetup';
 
 export function Settings() {
   const { user, signOut, updatePassword, deleteAccount } = useAuth();
@@ -223,7 +224,25 @@ export function Settings() {
             QuickStack is a mobile-first comic book collection tracker designed for speed and simplicity.
             Add comics to your collection in under 5 seconds.
           </p>
-          <div className="text-xs text-gray-500">Version 1.0.0</div>
+          <div className="text-xs text-gray-500 mb-4">Version 1.0.0</div>
+          <div className="border-t border-gray-800 pt-3 space-y-1">
+            <button
+              type="button"
+              onClick={() => openLegalLink('privacy')}
+              className="flex items-center justify-between w-full py-2 px-1 text-sm text-gray-400 hover:text-white transition-colors rounded-md hover:bg-gray-800 group"
+            >
+              <span>Privacy Policy</span>
+              <ExternalLink size={14} className="text-gray-600 group-hover:text-gray-400 transition-colors" />
+            </button>
+            <button
+              type="button"
+              onClick={() => openLegalLink('terms')}
+              className="flex items-center justify-between w-full py-2 px-1 text-sm text-gray-400 hover:text-white transition-colors rounded-md hover:bg-gray-800 group"
+            >
+              <span>Terms of Service</span>
+              <ExternalLink size={14} className="text-gray-600 group-hover:text-gray-400 transition-colors" />
+            </button>
+          </div>
         </div>
 
         <div className="bg-gray-900 rounded-lg p-4 border border-red-900">
