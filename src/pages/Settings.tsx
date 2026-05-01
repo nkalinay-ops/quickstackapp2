@@ -4,6 +4,7 @@ import { LogOut, User, Mail, Lock, Eye, EyeOff, Trash2, AlertTriangle, ExternalL
 import { PasswordStrength, validatePassword } from '../components/PasswordStrength';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { AlertModal } from '../components/AlertModal';
+import { openLegalLink, HOSTED_PRIVACY_URL, HOSTED_TERMS_URL } from '../lib/capacitorSetup';
 
 export function Settings() {
   const { user, signOut, updatePassword, deleteAccount } = useAuth();
@@ -225,24 +226,22 @@ export function Settings() {
           </p>
           <div className="text-xs text-gray-500 mb-4">Version 1.0.0</div>
           <div className="border-t border-gray-800 pt-3 space-y-1">
-            <a
-              href="/privacy.html"
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={() => openLegalLink(HOSTED_PRIVACY_URL)}
               className="flex items-center justify-between w-full py-2 px-1 text-sm text-gray-400 hover:text-white transition-colors rounded-md hover:bg-gray-800 group"
             >
               <span>Privacy Policy</span>
               <ExternalLink size={14} className="text-gray-600 group-hover:text-gray-400 transition-colors" />
-            </a>
-            <a
-              href="/terms.html"
-              target="_blank"
-              rel="noopener noreferrer"
+            </button>
+            <button
+              type="button"
+              onClick={() => openLegalLink(HOSTED_TERMS_URL)}
               className="flex items-center justify-between w-full py-2 px-1 text-sm text-gray-400 hover:text-white transition-colors rounded-md hover:bg-gray-800 group"
             >
               <span>Terms of Service</span>
               <ExternalLink size={14} className="text-gray-600 group-hover:text-gray-400 transition-colors" />
-            </a>
+            </button>
           </div>
         </div>
 

@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { Eye, EyeOff } from 'lucide-react';
 import { PasswordStrength, validatePassword } from './PasswordStrength';
+import { openLegalLink, HOSTED_PRIVACY_URL, HOSTED_TERMS_URL } from '../lib/capacitorSetup';
 
 export function Auth() {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -188,23 +189,21 @@ export function Auth() {
           {isSignUp && (
             <p className="text-xs text-gray-500 text-center pt-1">
               By creating an account, you agree to our{' '}
-              <a
-                href="/terms.html"
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() => openLegalLink(HOSTED_TERMS_URL)}
                 className="text-blue-400 hover:text-blue-300 underline"
               >
                 Terms of Service
-              </a>{' '}
+              </button>{' '}
               and{' '}
-              <a
-                href="/privacy.html"
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() => openLegalLink(HOSTED_PRIVACY_URL)}
                 className="text-blue-400 hover:text-blue-300 underline"
               >
                 Privacy Policy
-              </a>
+              </button>
               .
             </p>
           )}

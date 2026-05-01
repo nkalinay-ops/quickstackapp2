@@ -1,6 +1,17 @@
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
 
+export const HOSTED_PRIVACY_URL = 'https://quickstackapp2.vercel.app/privacy.html';
+export const HOSTED_TERMS_URL = 'https://quickstackapp2.vercel.app/terms.html';
+
+export function openLegalLink(url: string): void {
+  if (isNativePlatform()) {
+    window.open(url, '_system');
+  } else {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+}
+
 export function isNativePlatform(): boolean {
   return Capacitor.isNativePlatform();
 }
