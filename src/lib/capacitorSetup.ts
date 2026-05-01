@@ -1,6 +1,26 @@
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
 
+type LegalPage = 'privacy' | 'terms';
+
+const NATIVE_LEGAL_URLS: Record<LegalPage, string> = {
+  privacy: 'https://quickstackapp2.vercel.app/privacy.html',
+  terms: 'https://quickstackapp2.vercel.app/terms.html',
+};
+
+const LEGAL_PATHS: Record<LegalPage, string> = {
+  privacy: '/privacy.html',
+  terms: '/terms.html',
+};
+
+export function openLegalLink(page: LegalPage): void {
+  if (isNativePlatform()) {
+    window.open(NATIVE_LEGAL_URLS[page], '_system');
+  } else {
+    window.open(window.location.origin + LEGAL_PATHS[page], '_blank', 'noopener,noreferrer');
+  }
+}
+
 export function isNativePlatform(): boolean {
   return Capacitor.isNativePlatform();
 }

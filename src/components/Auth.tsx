@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { Eye, EyeOff } from 'lucide-react';
 import { PasswordStrength, validatePassword } from './PasswordStrength';
+import { openLegalLink } from '../lib/capacitorSetup';
 
 export function Auth() {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -183,16 +184,29 @@ export function Auth() {
             >
               {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
             </button>
-            {import.meta.env.DEV && (
+          </div>
+
+          {isSignUp && (
+            <p className="text-xs text-gray-500 text-center pt-1">
+              By creating an account, you agree to our{' '}
               <button
                 type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: 'dev-reset' }))}
-                className="w-full text-amber-600 hover:text-amber-400 transition-colors text-xs font-mono"
+                onClick={() => openLegalLink('terms')}
+                className="text-blue-400 hover:text-blue-300 underline"
               >
-                [DEV] Test Password Reset
+                Terms of Service
+              </button>{' '}
+              and{' '}
+              <button
+                type="button"
+                onClick={() => openLegalLink('privacy')}
+                className="text-blue-400 hover:text-blue-300 underline"
+              >
+                Privacy Policy
               </button>
-            )}
-          </div>
+              .
+            </p>
+          )}
         </form>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Key, Copy, CheckCircle2, Loader2 } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { Key, Copy, CheckCircle2, Loader2, ShieldOff } from 'lucide-react';
 import { AlertModal } from '../components/AlertModal';
 
 interface BetaKey {
@@ -15,6 +16,7 @@ interface BetaKey {
 }
 
 export function BetaKeys() {
+  const { isAdmin } = useAuth();
   const [keys, setKeys] = useState<BetaKey[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -106,6 +108,16 @@ export function BetaKeys() {
   const isExpired = (expiresAt: string) => {
     return new Date(expiresAt) < new Date();
   };
+
+  if (!isAdmin) {
+    return (
+      <div className="p-6 max-w-6xl mx-auto flex flex-col items-center justify-center min-h-96">
+        <ShieldOff className="w-16 h-16 text-red-500 mb-4" />
+        <h1 className="text-2xl font-bold text-white mb-2">Access Denied</h1>
+        <p className="text-gray-400">You do not have permission to view this page.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-6xl mx-auto">

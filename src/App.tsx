@@ -13,13 +13,12 @@ import { AdminPanel } from './pages/AdminPanel';
 import { BulkUpload } from './pages/BulkUpload';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
-import { DevResetPassword } from './pages/DevResetPassword';
 
 type LayoutPage = 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload';
-type Page = 'auth' | 'forgot-password' | 'reset-password' | 'dev-reset' | LayoutPage;
+type Page = 'auth' | 'forgot-password' | 'reset-password' | LayoutPage;
 
 function AppContent() {
-  const { user, loading } = useAuth();
+  const { user, loading, isAdmin } = useAuth();
 
   const getInitialPage = (): Page => {
     const params = new URLSearchParams(window.location.search);
@@ -63,10 +62,6 @@ function AppContent() {
     return <ForgotPassword />;
   }
 
-  if (currentPage === 'dev-reset' && import.meta.env.DEV) {
-    return <DevResetPassword />;
-  }
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
@@ -86,8 +81,8 @@ function AppContent() {
       {currentPage === 'add' && <AddComic />}
       {currentPage === 'wishlist' && <Wishlist />}
       {currentPage === 'settings' && <Settings />}
-      {currentPage === 'beta-keys' && <BetaKeys />}
-      {currentPage === 'admin' && <AdminPanel />}
+      {currentPage === 'beta-keys' && isAdmin && <BetaKeys />}
+      {currentPage === 'admin' && isAdmin && <AdminPanel />}
       {currentPage === 'bulk-upload' && <BulkUpload />}
     </Layout>
   );
