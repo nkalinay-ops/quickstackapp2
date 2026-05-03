@@ -76,10 +76,10 @@ function getPublisherDomain(publisher: string): string | null {
 }
 
 function PublisherLogo({ publisher }: { publisher: string }) {
-  const [failed, setFailed] = useState(false);
+  const [stage, setStage] = useState<'clearbit' | 'google' | 'icon'>('clearbit');
   const domain = getPublisherDomain(publisher);
 
-  if (!domain || failed) {
+  if (!domain || stage === 'icon') {
     return (
       <div className="w-10 h-10 rounded-lg bg-blue-950 border border-blue-900 flex items-center justify-center flex-shrink-0">
         <Building2 size={20} className="text-blue-400" />
@@ -87,13 +87,17 @@ function PublisherLogo({ publisher }: { publisher: string }) {
     );
   }
 
+  const src = stage === 'clearbit'
+    ? `https://logo.clearbit.com/${domain}`
+    : `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+
   return (
     <div className="w-10 h-10 rounded-lg bg-white border border-gray-200 flex items-center justify-center flex-shrink-0 overflow-hidden">
       <img
-        src={`https://logo.clearbit.com/${domain}`}
+        src={src}
         alt={publisher}
-        onError={() => setFailed(true)}
-        className="w-8 h-8 object-contain transition-opacity duration-300"
+        onError={() => setStage(stage === 'clearbit' ? 'google' : 'icon')}
+        className="w-8 h-8 object-contain"
       />
     </div>
   );
