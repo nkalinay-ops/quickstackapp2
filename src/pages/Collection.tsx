@@ -32,6 +32,73 @@ interface StoryGroup {
 const UNKNOWN_PUBLISHER = 'Unknown Publisher';
 const SINGLE_ISSUES = 'Single Issues';
 
+// Map of publisher names (lowercase) to their primary domain for logo lookup
+const PUBLISHER_DOMAINS: Record<string, string> = {
+  'marvel': 'marvel.com',
+  'marvel comics': 'marvel.com',
+  'dc': 'dccomics.com',
+  'dc comics': 'dccomics.com',
+  'image': 'imagecomics.com',
+  'image comics': 'imagecomics.com',
+  'dark horse': 'darkhorse.com',
+  'dark horse comics': 'darkhorse.com',
+  'idw': 'idwpublishing.com',
+  'idw publishing': 'idwpublishing.com',
+  'boom': 'boom-studios.com',
+  'boom! studios': 'boom-studios.com',
+  'boom studios': 'boom-studios.com',
+  'valiant': 'valiantentertainment.com',
+  'valiant entertainment': 'valiantentertainment.com',
+  'dynamite': 'dynamite.com',
+  'dynamite entertainment': 'dynamite.com',
+  'archie': 'archiecomics.com',
+  'archie comics': 'archiecomics.com',
+  'fantagraphics': 'fantagraphics.com',
+  'fantagraphics books': 'fantagraphics.com',
+  'oni press': 'onipress.com',
+  'vault comics': 'vaultcomics.com',
+  'aftershock': 'aftershockcomics.com',
+  'aftershock comics': 'aftershockcomics.com',
+  'titan': 'titancomics.com',
+  'titan comics': 'titancomics.com',
+  'zenescope': 'zenescope.com',
+  'top cow': 'topcow.com',
+  'top cow productions': 'topcow.com',
+  'avatar press': 'avatarpress.com',
+  'drawn & quarterly': 'drawnandquarterly.com',
+  'drawn and quarterly': 'drawnandquarterly.com',
+};
+
+function getPublisherDomain(publisher: string): string | null {
+  const key = publisher.trim().toLowerCase();
+  if (PUBLISHER_DOMAINS[key]) return PUBLISHER_DOMAINS[key];
+  return null;
+}
+
+function PublisherLogo({ publisher }: { publisher: string }) {
+  const [failed, setFailed] = useState(false);
+  const domain = getPublisherDomain(publisher);
+
+  if (!domain || failed) {
+    return (
+      <div className="w-10 h-10 rounded-lg bg-blue-950 border border-blue-900 flex items-center justify-center flex-shrink-0">
+        <Building2 size={20} className="text-blue-400" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-10 h-10 rounded-lg bg-white border border-gray-200 flex items-center justify-center flex-shrink-0 overflow-hidden">
+      <img
+        src={`https://logo.clearbit.com/${domain}`}
+        alt={publisher}
+        onError={() => setFailed(true)}
+        className="w-8 h-8 object-contain transition-opacity duration-300"
+      />
+    </div>
+  );
+}
+
 function issueRange(comics: Comic[]): string {
   const nums = comics
     .map(c => parseFloat(c.issue_number))
@@ -604,9 +671,7 @@ export function Collection() {
             onClick={() => drillToSeries(g.publisher)}
             className="w-full bg-gray-900 rounded-lg p-4 border border-gray-800 hover:border-blue-700 transition-colors flex items-center gap-4 text-left group"
           >
-            <div className="w-10 h-10 rounded-lg bg-blue-950 border border-blue-900 flex items-center justify-center flex-shrink-0">
-              <Building2 size={20} className="text-blue-400" />
-            </div>
+            <PublisherLogo publisher={g.publisher} />
             <div className="flex-1 min-w-0">
               <div className="font-semibold text-white truncate">{g.publisher}</div>
               <div className="text-sm text-gray-400 mt-0.5">
