@@ -7,7 +7,8 @@ const corsHeaders = {
 };
 
 interface ComicData {
-  title: string;
+  series: string;
+  story: string;
   issue_number: string;
   publisher: string;
   year: number | null;
@@ -63,24 +64,34 @@ CRITICAL: You MUST respond with valid JSON only. No explanatory text before or a
 
 Your response format MUST be:
 {
-  "title": "string",
+  "series": "string",
+  "story": "string",
   "issue_number": "string",
   "publisher": "string",
   "year": number or null,
   "confidence": "high" | "medium" | "low"
 }
 
+Field definitions:
+- "series": The ongoing series name — the primary, recurring title of the comic (e.g., "The Amazing Spider-Man", "Batman", "X-Men"). This is usually the largest text on the cover.
+- "story": The individual story arc title or issue subtitle printed on the cover (e.g., "Kraven's Last Hunt", "Year One", "The Dark Phoenix Saga"). Leave empty string "" if no story subtitle is visible.
+- "issue_number": The issue number only, no # symbol (e.g., "300", "1", "12")
+- "publisher": Publisher name (Marvel, DC, Image, Dark Horse, etc.)
+- "year": Publication year as a number if visible, otherwise null
+
 Rules:
-1. Extract the main comic title (large text)
-2. Extract issue number (number only, no # symbol)
-3. Extract publisher name (Marvel, DC, Image, etc.)
-4. Extract year if visible
-5. If you cannot see any text clearly, still return JSON with empty strings and "low" confidence
-6. NEVER respond with explanatory text - ONLY valid JSON
+1. "series" is the brand/franchise name that continues across many issues
+2. "story" is only the subtitle for this specific issue or arc — most issues have no story title
+3. Extract issue number (number only, no # symbol)
+4. Extract publisher name
+5. Extract year if visible
+6. If you cannot see any text clearly, still return JSON with empty strings and "low" confidence
+7. NEVER respond with explanatory text - ONLY valid JSON
 
 Example responses:
-Good: {"title":"Spider-Man","issue_number":"1","publisher":"Marvel","year":1990,"confidence":"high"}
-Good: {"title":"","issue_number":"","publisher":"","year":null,"confidence":"low"}
+Good: {"series":"The Amazing Spider-Man","story":"Kraven's Last Hunt","issue_number":"294","publisher":"Marvel","year":1988,"confidence":"high"}
+Good: {"series":"Batman","story":"","issue_number":"1","publisher":"DC Comics","year":1940,"confidence":"high"}
+Good: {"series":"","story":"","issue_number":"","publisher":"","year":null,"confidence":"low"}
 Bad: "I cannot see the text clearly in this image"
 Bad: "Here is what I found: {..."
 
@@ -91,7 +102,7 @@ ALWAYS return valid JSON, even if the image is unclear.`
             content: [
               {
                 type: "text",
-                text: `Extract all readable text from this comic book cover. Focus on the title, issue number, publisher, and publication year. Ignore artwork and decorative elements. Be accurate and structured in your extraction.`
+                text: `Extract all readable text from this comic book cover. Identify the series name (the ongoing franchise title), any story/arc subtitle for this specific issue, the issue number, publisher, and publication year. Ignore artwork and decorative elements. Be accurate and structured in your extraction.`
               },
               {
                 type: "image_url",
@@ -204,7 +215,8 @@ ALWAYS return valid JSON, even if the image is unclear.`
       JSON.stringify({
         success: true,
         data: {
-          title: comicData.title || "",
+          series: comicData.series || "",
+          story: comicData.story || "",
           issue_number: comicData.issue_number || "",
           publisher: comicData.publisher || "",
           year: comicData.year || null,

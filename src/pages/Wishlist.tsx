@@ -11,7 +11,8 @@ export function Wishlist() {
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState({
-    title: '',
+    series: '',
+    story: '',
     issue_number: '',
     publisher: '',
     priority: 'Medium',
@@ -52,12 +53,13 @@ export function Wishlist() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !formData.title.trim()) return;
+    if (!user || !formData.series.trim()) return;
 
     try {
       const { error } = await supabase.from('wishlist').insert({
         user_id: user.id,
-        title: formData.title.trim(),
+        series: formData.series.trim(),
+        story: formData.story.trim(),
         issue_number: formData.issue_number.trim(),
         publisher: formData.publisher.trim(),
         priority: formData.priority,
@@ -67,7 +69,8 @@ export function Wishlist() {
       if (error) throw error;
 
       setFormData({
-        title: '',
+        series: '',
+        story: '',
         issue_number: '',
         publisher: '',
         priority: 'Medium',
@@ -106,7 +109,8 @@ export function Wishlist() {
     try {
       const { error: insertError } = await supabase.from('comics').insert({
         user_id: user!.id,
-        title: item.title,
+        series: item.series,
+        story: item.story,
         issue_number: item.issue_number,
         publisher: item.publisher,
         year: null,
@@ -184,12 +188,19 @@ export function Wishlist() {
           <form onSubmit={handleSubmit} className="bg-gray-900 rounded-lg p-4 space-y-3 mb-4 border border-gray-800">
             <input
               type="text"
-              placeholder="Comic title *"
-              value={formData.title}
-              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+              placeholder="Series *"
+              value={formData.series}
+              onChange={(e) => setFormData({ ...formData, series: e.target.value })}
               required
               className="w-full px-3 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
               autoFocus
+            />
+            <input
+              type="text"
+              placeholder="Story / arc title"
+              value={formData.story}
+              onChange={(e) => setFormData({ ...formData, story: e.target.value })}
+              className="w-full px-3 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
             />
             <div className="grid grid-cols-2 gap-2">
               <input
@@ -258,7 +269,10 @@ export function Wishlist() {
               >
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-white">{item.title}</div>
+                    <div className="font-medium text-white">{item.series}</div>
+                    {item.story && (
+                      <div className="text-sm text-gray-300 mt-0.5 italic">{item.story}</div>
+                    )}
                     <div className="text-sm text-gray-400 mt-1">
                       {item.issue_number && `#${item.issue_number}`}
                       {item.issue_number && item.publisher && ' • '}

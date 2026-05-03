@@ -57,7 +57,10 @@ export default function DuplicateModal({
                 />
               )}
               <div className="bg-gray-800 p-4 rounded-lg space-y-2 border border-gray-700">
-                <p className="font-medium text-white">{existingComic.title}</p>
+                <p className="font-medium text-white">{existingComic.series}</p>
+                {existingComic.story && (
+                  <p className="text-sm text-gray-300 italic">{existingComic.story}</p>
+                )}
                 <p className="text-sm text-gray-400">Issue #{existingComic.issue_number}</p>
                 {existingComic.publisher && (
                   <p className="text-sm text-gray-400">{existingComic.publisher}</p>

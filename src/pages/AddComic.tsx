@@ -9,7 +9,8 @@ import { AlertModal } from '../components/AlertModal';
 
 export function AddComic() {
   const { user } = useAuth();
-  const [title, setTitle] = useState('');
+  const [series, setSeries] = useState('');
+  const [story, setStory] = useState('');
   const [issueNumber, setIssueNumber] = useState('');
   const [publisher, setPublisher] = useState('');
   const [year, setYear] = useState('');
@@ -28,15 +29,15 @@ export function AddComic() {
     message: '',
   });
 
-  const checkForDuplicates = async (comicTitle: string, comicIssueNumber: string): Promise<Comic | null> => {
-    if (!user || !comicTitle.trim() || !comicIssueNumber.trim()) return null;
+  const checkForDuplicates = async (comicSeries: string, comicIssueNumber: string): Promise<Comic | null> => {
+    if (!user || !comicSeries.trim() || !comicIssueNumber.trim()) return null;
 
     try {
       const { data, error } = await supabase
         .from('comics')
         .select('*')
         .eq('user_id', user.id)
-        .ilike('title', comicTitle.trim())
+        .ilike('series', comicSeries.trim())
         .ilike('issue_number', comicIssueNumber.trim())
         .maybeSingle();
 
@@ -89,17 +90,18 @@ export function AddComic() {
       }
 
       if (result.success && result.data) {
-        const scannedTitle = result.data.title || '';
+        const scannedSeries = result.data.series || '';
         const scannedIssue = result.data.issue_number || '';
 
-        setTitle(scannedTitle);
+        setSeries(scannedSeries);
+        setStory(result.data.story || '');
         setIssueNumber(scannedIssue);
         setPublisher(result.data.publisher || '');
         setYear(result.data.year ? result.data.year.toString() : '');
 
-        if (scannedTitle && scannedIssue) {
+        if (scannedSeries && scannedIssue) {
           setCheckingDuplicate(true);
-          const duplicate = await checkForDuplicates(scannedTitle, scannedIssue);
+          const duplicate = await checkForDuplicates(scannedSeries, scannedIssue);
           setCheckingDuplicate(false);
 
           if (duplicate) {
@@ -243,7 +245,8 @@ export function AddComic() {
 
       setShowDuplicateModal(false);
       setSuccess(true);
-      setTitle('');
+      setSeries('');
+      setStory('');
       setIssueNumber('');
       setPublisher('');
       setYear('');
@@ -286,7 +289,8 @@ export function AddComic() {
 
       const { error } = await supabase.from('comics').insert({
         user_id: user!.id,
-        title: title.trim(),
+        series: series.trim(),
+        story: story.trim(),
         issue_number: issueNumber.trim(),
         publisher: publisher.trim(),
         year: year ? parseInt(year) : null,
@@ -300,7 +304,8 @@ export function AddComic() {
       if (error) throw error;
 
       setSuccess(true);
-      setTitle('');
+      setSeries('');
+      setStory('');
       setIssueNumber('');
       setPublisher('');
       setYear('');
@@ -325,7 +330,8 @@ export function AddComic() {
   const handleDiscardScan = () => {
     setShowDuplicateModal(false);
     setDuplicateComic(null);
-    setTitle('');
+    setSeries('');
+    setStory('');
     setIssueNumber('');
     setPublisher('');
     setYear('');
@@ -336,12 +342,11 @@ export function AddComic() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !title.trim()) return;
+    if (!user || !series.trim()) return;
 
-    // Always check for duplicates if we have both title and issue number
-    if (title.trim() && issueNumber.trim()) {
+    if (series.trim() && issueNumber.trim()) {
       setCheckingDuplicate(true);
-      const duplicate = await checkForDuplicates(title, issueNumber);
+      const duplicate = await checkForDuplicates(series, issueNumber);
       setCheckingDuplicate(false);
 
       if (duplicate) {
@@ -366,7 +371,8 @@ export function AddComic() {
 
       const { error } = await supabase.from('comics').insert({
         user_id: user.id,
-        title: title.trim(),
+        series: series.trim(),
+        story: story.trim(),
         issue_number: issueNumber.trim(),
         publisher: publisher.trim(),
         year: year ? parseInt(year) : null,
@@ -380,7 +386,8 @@ export function AddComic() {
       if (error) throw error;
 
       setSuccess(true);
-      setTitle('');
+      setSeries('');
+      setStory('');
       setIssueNumber('');
       setPublisher('');
       setYear('');
@@ -480,18 +487,32 @@ export function AddComic() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="title" className="block text-sm font-medium text-gray-300 mb-1">
-            Title <span className="text-red-400">*</span>
+          <label htmlFor="series" className="block text-sm font-medium text-gray-300 mb-1">
+            Series <span className="text-red-400">*</span>
           </label>
           <input
-            id="title"
+            id="series"
             type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            value={series}
+            onChange={(e) => setSeries(e.target.value)}
             required
             placeholder="e.g., The Amazing Spider-Man"
             className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg"
             autoFocus
+          />
+        </div>
+
+        <div>
+          <label htmlFor="story" className="block text-sm font-medium text-gray-300 mb-1">
+            Story
+          </label>
+          <input
+            id="story"
+            type="text"
+            value={story}
+            onChange={(e) => setStory(e.target.value)}
+            placeholder="e.g., Kraven's Last Hunt"
+            className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
 
@@ -575,7 +596,7 @@ export function AddComic() {
 
         <button
           type="submit"
-          disabled={loading || !title.trim()}
+          disabled={loading || !series.trim()}
           className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg"
         >
           {success ? (

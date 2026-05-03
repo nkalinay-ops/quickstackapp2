@@ -96,12 +96,15 @@ export function Dashboard() {
                 {comic.color_image_url && (
                   <img
                     src={comic.color_image_url}
-                    alt={comic.title}
+                    alt={comic.series}
                     className="w-16 h-24 object-cover rounded"
                   />
                 )}
                 <div className="flex-1">
-                  <div className="font-medium">{comic.title}</div>
+                  <div className="font-medium">{comic.series}</div>
+                  {comic.story && (
+                    <div className="text-sm text-gray-300 italic">{comic.story}</div>
+                  )}
                   <div className="text-sm text-gray-400 mt-1">
                     {comic.issue_number && `#${comic.issue_number}`}
                     {comic.issue_number && comic.publisher && ' • '}
