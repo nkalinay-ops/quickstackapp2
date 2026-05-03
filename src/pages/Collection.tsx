@@ -21,6 +21,7 @@ interface SeriesGroup {
   series: string;
   storyCount: number;
   issueCount: number;
+  coverUrl: string | null;
 }
 
 interface StoryGroup {
@@ -207,12 +208,20 @@ export function Collection() {
       if (c.story.trim()) map.get(c.series)!.add(c.story.trim());
       counts.set(c.series, (counts.get(c.series) || 0) + 1);
     }
+    const withCovers = inPub.filter(c => c.color_image_url || c.bw_image_url);
     return Array.from(map.entries())
-      .map(([series, storySet]) => ({
-        series,
-        storyCount: storySet.size,
-        issueCount: counts.get(series) || 0,
-      }))
+      .map(([series, storySet]) => {
+        const candidates = withCovers.filter(c => c.series === series);
+        const pick = candidates.length > 0
+          ? candidates[Math.floor(Math.random() * candidates.length)]
+          : null;
+        return {
+          series,
+          storyCount: storySet.size,
+          issueCount: counts.get(series) || 0,
+          coverUrl: pick ? (pick.color_image_url || pick.bw_image_url) : null,
+        };
+      })
       .sort((a, b) => a.series.localeCompare(b.series));
   };
 
@@ -709,9 +718,19 @@ export function Collection() {
             onClick={() => drillToStories(g.series)}
             className="w-full bg-gray-900 rounded-lg p-4 border border-gray-800 hover:border-green-700 transition-colors flex items-center gap-4 text-left group"
           >
-            <div className="w-10 h-10 rounded-lg bg-green-950 border border-green-900 flex items-center justify-center flex-shrink-0">
-              <BookOpen size={20} className="text-green-400" />
-            </div>
+            {g.coverUrl ? (
+              <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 border border-gray-700">
+                <img
+                  src={g.coverUrl}
+                  alt={g.series}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            ) : (
+              <div className="w-10 h-10 rounded-lg bg-green-950 border border-green-900 flex items-center justify-center flex-shrink-0">
+                <BookOpen size={20} className="text-green-400" />
+              </div>
+            )}
             <div className="flex-1 min-w-0">
               <div className="font-semibold text-white truncate">{g.series}</div>
               <div className="text-sm text-gray-400 mt-0.5">
