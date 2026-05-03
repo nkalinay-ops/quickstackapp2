@@ -27,6 +27,7 @@ interface StoryGroup {
   story: string;
   issueCount: number;
   issueRange: string;
+  coverUrl: string | null;
 }
 
 const UNKNOWN_PUBLISHER = 'Unknown Publisher';
@@ -225,11 +226,15 @@ export function Collection() {
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(c);
     }
-    const groups = Array.from(map.entries()).map(([story, list]) => ({
-      story,
-      issueCount: list.length,
-      issueRange: issueRange(list),
-    }));
+    const groups = Array.from(map.entries()).map(([story, list]) => {
+      const cover = list.find(c => c.color_image_url || c.bw_image_url);
+      return {
+        story,
+        issueCount: list.length,
+        issueRange: issueRange(list),
+        coverUrl: cover ? (cover.color_image_url || cover.bw_image_url) : null,
+      };
+    });
     // Single Issues always first, then alphabetical
     return groups.sort((a, b) => {
       if (a.story === SINGLE_ISSUES) return -1;
@@ -738,9 +743,19 @@ export function Collection() {
             onClick={() => drillToIssues(g.story)}
             className="w-full bg-gray-900 rounded-lg p-4 border border-gray-800 hover:border-yellow-700 transition-colors flex items-center gap-4 text-left group"
           >
-            <div className="w-10 h-10 rounded-lg bg-yellow-950 border border-yellow-900 flex items-center justify-center flex-shrink-0">
-              <Bookmark size={20} className="text-yellow-400" />
-            </div>
+            {g.coverUrl ? (
+              <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 border border-gray-700">
+                <img
+                  src={g.coverUrl}
+                  alt={g.story}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            ) : (
+              <div className="w-10 h-10 rounded-lg bg-yellow-950 border border-yellow-900 flex items-center justify-center flex-shrink-0">
+                <Bookmark size={20} className="text-yellow-400" />
+              </div>
+            )}
             <div className="flex-1 min-w-0">
               <div className="font-semibold text-white truncate">
                 {g.story === SINGLE_ISSUES ? <span className="text-gray-300 not-italic">Single Issues</span> : g.story}
