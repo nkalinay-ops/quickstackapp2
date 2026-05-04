@@ -103,6 +103,7 @@ export function AddComic() {
         setYear(result.data.year ? result.data.year.toString() : '');
         const scannedTotal = result.data.total_issues ?? null;
         setTotalIssues(scannedTotal ? scannedTotal.toString() : '');
+        setCoverVariant(result.data.cover_variant ? result.data.cover_variant.toString() : '');
 
         if (scannedTotal && result.data.story !== undefined) {
           const conflict = await checkTotalIssuesConflict(result.data.series || '', result.data.story || '', scannedTotal);
