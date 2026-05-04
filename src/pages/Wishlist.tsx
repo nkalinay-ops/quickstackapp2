@@ -17,6 +17,7 @@ export function Wishlist() {
     publisher: '',
     priority: 'Medium',
     notes: '',
+    total_issues: '',
   });
   const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; action: 'delete' | 'acquire' | null; itemId: string | null; item: WishlistItem | null }>({
     isOpen: false,
@@ -64,6 +65,7 @@ export function Wishlist() {
         publisher: formData.publisher.trim(),
         priority: formData.priority,
         notes: formData.notes.trim(),
+        total_issues: formData.total_issues ? parseInt(formData.total_issues) : null,
       });
 
       if (error) throw error;
@@ -75,6 +77,7 @@ export function Wishlist() {
         publisher: '',
         priority: 'Medium',
         notes: '',
+        total_issues: '',
       });
       setShowAddForm(false);
       loadWishlist();
@@ -116,6 +119,7 @@ export function Wishlist() {
         year: null,
         condition: '',
         notes: item.notes,
+        total_issues: item.total_issues ?? null,
       });
 
       if (insertError) throw insertError;
@@ -218,6 +222,14 @@ export function Wishlist() {
                 className="w-full px-3 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
               />
             </div>
+            <input
+              type="number"
+              min="1"
+              placeholder="Total issues in arc (optional, e.g. 6)"
+              value={formData.total_issues}
+              onChange={(e) => setFormData({ ...formData, total_issues: e.target.value })}
+              className="w-full px-3 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
+            />
             <div className="flex gap-2">
               {['High', 'Medium', 'Low'].map((p) => (
                 <button

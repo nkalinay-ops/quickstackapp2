@@ -34,6 +34,8 @@ export type Comic = {
   color_image_url: string | null;
   bw_image_url: string | null;
   copy_count: number;
+  total_issues: number | null;
+  total_issues_conflict: boolean | null;
   created_at: string;
   updated_at: string;
 };
@@ -47,5 +49,7 @@ export type WishlistItem = {
   publisher: string;
   priority: string;
   notes: string;
+  total_issues: number | null;
+  total_issues_conflict: boolean | null;
   created_at: string;
 };

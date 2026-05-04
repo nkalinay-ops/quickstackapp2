@@ -12,6 +12,7 @@ interface ComicData {
   issue_number: string;
   publisher: string;
   year: number | null;
+  total_issues: number | null;
 }
 
 Deno.serve(async (req: Request) => {
@@ -69,6 +70,7 @@ Your response format MUST be:
   "issue_number": "string",
   "publisher": "string",
   "year": number or null,
+  "total_issues": number or null,
   "confidence": "high" | "medium" | "low"
 }
 
@@ -78,6 +80,7 @@ Field definitions:
 - "issue_number": The issue number only, no # symbol (e.g., "300", "1", "12")
 - "publisher": Publisher name (Marvel, DC, Image, Dark Horse, etc.)
 - "year": Publication year as a number if visible, otherwise null
+- "total_issues": The total number of issues in the story arc or limited series, as printed on the cover. Look for patterns like "of 4", "#2 of 6", "Part 3 of 5", "Book 1 of 3", "Limited Series" (cannot extract number from this), "1 of 4", etc. Extract only the total number (e.g., if cover says "#2 of 6", return 6). Return null if not visible or not a limited series.
 
 Rules:
 1. "series" is the brand/franchise name that continues across many issues
@@ -85,13 +88,15 @@ Rules:
 3. Extract issue number (number only, no # symbol)
 4. Extract publisher name
 5. Extract year if visible
-6. If you cannot see any text clearly, still return JSON with empty strings and "low" confidence
-7. NEVER respond with explanatory text - ONLY valid JSON
+6. Extract total_issues from "of N" patterns on the cover — this is common on limited series and story arcs
+7. If you cannot see any text clearly, still return JSON with empty strings and "low" confidence
+8. NEVER respond with explanatory text - ONLY valid JSON
 
 Example responses:
-Good: {"series":"The Amazing Spider-Man","story":"Kraven's Last Hunt","issue_number":"294","publisher":"Marvel","year":1988,"confidence":"high"}
-Good: {"series":"Batman","story":"","issue_number":"1","publisher":"DC Comics","year":1940,"confidence":"high"}
-Good: {"series":"","story":"","issue_number":"","publisher":"","year":null,"confidence":"low"}
+Good: {"series":"The Amazing Spider-Man","story":"Kraven's Last Hunt","issue_number":"294","publisher":"Marvel","year":1988,"total_issues":null,"confidence":"high"}
+Good: {"series":"Batman","story":"Year One","issue_number":"1","publisher":"DC Comics","year":1987,"total_issues":4,"confidence":"high"}
+Good: {"series":"Watchmen","story":"","issue_number":"3","publisher":"DC Comics","year":1986,"total_issues":12,"confidence":"high"}
+Good: {"series":"","story":"","issue_number":"","publisher":"","year":null,"total_issues":null,"confidence":"low"}
 Bad: "I cannot see the text clearly in this image"
 Bad: "Here is what I found: {..."
 
@@ -220,6 +225,7 @@ ALWAYS return valid JSON, even if the image is unclear.`
           issue_number: comicData.issue_number || "",
           publisher: comicData.publisher || "",
           year: comicData.year || null,
+          total_issues: comicData.total_issues || null,
         },
       }),
       {

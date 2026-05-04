@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { supabase, Comic } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { CheckCircle2, Plus, Camera, Scan, X } from 'lucide-react';
+import { CheckCircle2, Plus, Camera, Scan, X, AlertTriangle } from 'lucide-react';
 import { CameraCapture } from '../components/CameraCapture';
 import { optimizeImageForOCR } from '../utils/imageOptimizer';
 import DuplicateModal from '../components/DuplicateModal';
@@ -16,6 +16,7 @@ export function AddComic() {
   const [year, setYear] = useState('');
   const [condition, setCondition] = useState('');
   const [notes, setNotes] = useState('');
+  const [totalIssues, setTotalIssues] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
@@ -24,6 +25,7 @@ export function AddComic() {
   const [duplicateComic, setDuplicateComic] = useState<Comic | null>(null);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
+  const [totalIssuesConflict, setTotalIssuesConflict] = useState(false);
   const [alertModal, setAlertModal] = useState<{ isOpen: boolean; title?: string; message: string; type?: 'error' | 'success' | 'info' }>({
     isOpen: false,
     message: '',
@@ -98,6 +100,13 @@ export function AddComic() {
         setIssueNumber(scannedIssue);
         setPublisher(result.data.publisher || '');
         setYear(result.data.year ? result.data.year.toString() : '');
+        const scannedTotal = result.data.total_issues ?? null;
+        setTotalIssues(scannedTotal ? scannedTotal.toString() : '');
+
+        if (scannedTotal && result.data.story !== undefined) {
+          const conflict = await checkTotalIssuesConflict(result.data.series || '', result.data.story || '', scannedTotal);
+          setTotalIssuesConflict(conflict);
+        }
 
         if (scannedSeries && scannedIssue) {
           setCheckingDuplicate(true);
@@ -252,6 +261,8 @@ export function AddComic() {
       setYear('');
       setCondition('');
       setNotes('');
+      setTotalIssues('');
+      setTotalIssuesConflict(false);
       setCapturedImage(null);
       setDuplicateComic(null);
 
@@ -287,6 +298,9 @@ export function AddComic() {
         bwImageUrl = bwUrl;
       }
 
+      const parsedTotal = totalIssues ? parseInt(totalIssues) : null;
+      const conflict = await checkTotalIssuesConflict(series, story, parsedTotal);
+
       const { error } = await supabase.from('comics').insert({
         user_id: user!.id,
         series: series.trim(),
@@ -299,6 +313,8 @@ export function AddComic() {
         color_image_url: colorImageUrl,
         bw_image_url: bwImageUrl,
         copy_count: 1,
+        total_issues: parsedTotal,
+        total_issues_conflict: conflict || null,
       });
 
       if (error) throw error;
@@ -311,6 +327,8 @@ export function AddComic() {
       setYear('');
       setCondition('');
       setNotes('');
+      setTotalIssues('');
+      setTotalIssuesConflict(false);
       setCapturedImage(null);
 
       setTimeout(() => setSuccess(false), 2000);
@@ -337,7 +355,32 @@ export function AddComic() {
     setYear('');
     setCondition('');
     setNotes('');
+    setTotalIssues('');
+    setTotalIssuesConflict(false);
     setCapturedImage(null);
+  };
+
+  const checkTotalIssuesConflict = async (
+    comicSeries: string,
+    comicStory: string,
+    newTotal: number | null
+  ): Promise<boolean> => {
+    if (!user || newTotal === null) return false;
+    try {
+      const { data } = await supabase
+        .from('comics')
+        .select('total_issues')
+        .eq('user_id', user.id)
+        .ilike('series', comicSeries.trim())
+        .ilike('story', comicStory.trim())
+        .not('total_issues', 'is', null)
+        .limit(1)
+        .maybeSingle();
+      if (data && data.total_issues !== newTotal) return true;
+    } catch {
+      // non-critical, don't block save
+    }
+    return false;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -369,6 +412,9 @@ export function AddComic() {
         bwImageUrl = bwUrl;
       }
 
+      const parsedTotal = totalIssues ? parseInt(totalIssues) : null;
+      const conflict = await checkTotalIssuesConflict(series, story, parsedTotal);
+
       const { error } = await supabase.from('comics').insert({
         user_id: user.id,
         series: series.trim(),
@@ -381,6 +427,8 @@ export function AddComic() {
         color_image_url: colorImageUrl,
         bw_image_url: bwImageUrl,
         copy_count: 1,
+        total_issues: parsedTotal,
+        total_issues_conflict: conflict || null,
       });
 
       if (error) throw error;
@@ -393,6 +441,8 @@ export function AddComic() {
       setYear('');
       setCondition('');
       setNotes('');
+      setTotalIssues('');
+      setTotalIssuesConflict(false);
       setCapturedImage(null);
 
       setTimeout(() => setSuccess(false), 2000);
@@ -544,6 +594,34 @@ export function AddComic() {
               className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+        </div>
+
+        <div>
+          <label htmlFor="totalIssues" className="block text-sm font-medium text-gray-300 mb-1">
+            Total Issues in Arc
+            <span className="ml-2 text-xs text-gray-500 font-normal">optional · e.g. "4" if cover says "#2 of 4"</span>
+          </label>
+          <input
+            id="totalIssues"
+            type="number"
+            min="1"
+            value={totalIssues}
+            onChange={(e) => { setTotalIssues(e.target.value); setTotalIssuesConflict(false); }}
+            placeholder="e.g., 6"
+            className={`w-full px-4 py-3 bg-gray-900 text-white rounded-lg border focus:outline-none focus:ring-2 transition-colors ${
+              totalIssuesConflict
+                ? 'border-amber-600 focus:border-amber-500 focus:ring-amber-500'
+                : 'border-gray-800 focus:border-blue-500 focus:ring-blue-500'
+            }`}
+          />
+          {totalIssuesConflict && (
+            <div className="mt-2 flex items-start gap-2 bg-amber-950 border border-amber-800 rounded-lg px-3 py-2">
+              <AlertTriangle size={15} className="text-amber-400 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-amber-300">
+                This arc already has a different total recorded. Please verify and correct the number above before saving.
+              </p>
+            </div>
+          )}
         </div>
 
         <div>

@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   Search, Trash2, X, Copy, CreditCard as Edit2, Save, Plus, Minus,
   ChevronRight, Building2, BookOpen, Bookmark, List, Layers,
+  Star, AlertTriangle,
 } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { AlertModal } from '../components/AlertModal';
@@ -29,6 +30,10 @@ interface StoryGroup {
   issueCount: number;
   issueRange: string;
   coverUrl: string | null;
+  totalIssues: number | null;
+  isComplete: boolean;
+  missingIssues: number[];
+  hasConflict: boolean;
 }
 
 const UNKNOWN_PUBLISHER = 'Unknown Publisher';
@@ -237,11 +242,37 @@ export function Collection() {
     }
     const groups = Array.from(map.entries()).map(([story, list]) => {
       const cover = list.find(c => c.color_image_url || c.bw_image_url);
+
+      // Use the max total_issues value across issues in this arc
+      const totals = list.map(c => c.total_issues).filter((t): t is number => t !== null && t !== undefined);
+      const totalIssues = totals.length > 0 ? Math.max(...totals) : null;
+
+      // Conflict: any comic in the arc has total_issues_conflict flag, or totals disagree
+      const hasConflict = list.some(c => c.total_issues_conflict === true) ||
+        (totals.length > 1 && new Set(totals).size > 1);
+
+      // Compute missing issue numbers when total is known
+      let missingIssues: number[] = [];
+      if (totalIssues !== null) {
+        const owned = new Set(
+          list.map(c => parseFloat(c.issue_number)).filter(n => !isNaN(n) && Number.isInteger(n))
+        );
+        for (let i = 1; i <= totalIssues; i++) {
+          if (!owned.has(i)) missingIssues.push(i);
+        }
+      }
+
+      const isComplete = totalIssues !== null && missingIssues.length === 0 && list.length >= totalIssues;
+
       return {
         story,
         issueCount: list.length,
         issueRange: issueRange(list),
         coverUrl: cover ? (cover.color_image_url || cover.bw_image_url) : null,
+        totalIssues,
+        isComplete,
+        missingIssues,
+        hasConflict,
       };
     });
     // Single Issues always first, then alphabetical
@@ -340,6 +371,8 @@ export function Collection() {
           condition: editedComic.condition.trim(),
           notes: editedComic.notes.trim(),
           copy_count: editedComic.copy_count,
+          total_issues: editedComic.total_issues,
+          total_issues_conflict: editedComic.total_issues_conflict,
         })
         .eq('id', editedComic.id);
       if (error) throw error;
@@ -525,6 +558,25 @@ export function Collection() {
               <div className="flex items-center gap-2">
                 <Copy size={20} className="text-blue-400" />
                 <span className="text-2xl font-semibold text-blue-400">{displayComic.copy_count}</span>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div className="text-sm text-gray-400 mb-1">Total Issues in Arc</div>
+            {isEditing ? (
+              <input type="number" min="1" value={displayComic.total_issues ?? ''}
+                onChange={(e) => setEditedComic({ ...displayComic, total_issues: e.target.value ? parseInt(e.target.value) : null, total_issues_conflict: null })}
+                placeholder="e.g., 6"
+                className="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none" />
+            ) : (
+              <div className="flex items-center gap-2">
+                <div className="text-lg">{displayComic.total_issues ?? '-'}</div>
+                {displayComic.total_issues_conflict && (
+                  <span className="flex items-center gap-1 text-xs text-amber-400 bg-amber-950 border border-amber-800 px-2 py-0.5 rounded">
+                    <AlertTriangle size={11} />Conflict — please verify
+                  </span>
+                )}
               </div>
             )}
           </div>
@@ -760,28 +812,84 @@ export function Collection() {
           <button
             key={g.story}
             onClick={() => drillToIssues(g.story)}
-            className="w-full bg-gray-900 rounded-lg p-4 border border-gray-800 hover:border-yellow-700 transition-colors flex items-center gap-4 text-left group"
+            className={`w-full bg-gray-900 rounded-lg p-4 border transition-colors flex items-center gap-4 text-left group ${
+              g.isComplete
+                ? 'border-green-800 hover:border-green-600'
+                : g.hasConflict
+                  ? 'border-amber-800 hover:border-amber-600'
+                  : 'border-gray-800 hover:border-yellow-700'
+            }`}
           >
-            {g.coverUrl ? (
-              <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 border border-gray-700">
-                <img
-                  src={g.coverUrl}
-                  alt={g.story}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-            ) : (
-              <div className="w-10 h-10 rounded-lg bg-yellow-950 border border-yellow-900 flex items-center justify-center flex-shrink-0">
-                <Bookmark size={20} className="text-yellow-400" />
-              </div>
-            )}
-            <div className="flex-1 min-w-0">
-              <div className="font-semibold text-white truncate">
-                {g.story === SINGLE_ISSUES ? <span className="text-gray-300 not-italic">Single Issues</span> : g.story}
-              </div>
-              <div className="text-sm text-gray-400 mt-0.5">{g.issueRange}</div>
+            {/* Cover image or icon */}
+            <div className="relative flex-shrink-0">
+              {g.coverUrl ? (
+                <div className="w-10 h-10 rounded-lg overflow-hidden border border-gray-700">
+                  <img src={g.coverUrl} alt={g.story} className="w-full h-full object-cover" />
+                </div>
+              ) : (
+                <div className={`w-10 h-10 rounded-lg border flex items-center justify-center ${
+                  g.isComplete ? 'bg-green-950 border-green-800' : 'bg-yellow-950 border-yellow-900'
+                }`}>
+                  <Bookmark size={20} className={g.isComplete ? 'text-green-400' : 'text-yellow-400'} />
+                </div>
+              )}
+              {/* Completion star badge */}
+              {g.isComplete && (
+                <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-green-500 rounded-full flex items-center justify-center shadow-lg border-2 border-gray-900">
+                  <Star size={10} className="text-white fill-white" />
+                </div>
+              )}
+              {/* Incomplete indicator dot */}
+              {!g.isComplete && g.totalIssues !== null && (
+                <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center shadow-lg border-2 border-gray-900">
+                  <span className="text-white text-[9px] font-bold leading-none">!</span>
+                </div>
+              )}
             </div>
-            <ChevronRight size={18} className="text-gray-600 group-hover:text-yellow-400 transition-colors flex-shrink-0" />
+
+            <div className="flex-1 min-w-0">
+              {/* Title row with conflict warning */}
+              <div className="flex items-center gap-1.5">
+                <div className="font-semibold text-white truncate">
+                  {g.story === SINGLE_ISSUES ? <span className="text-gray-300 not-italic">Single Issues</span> : g.story}
+                </div>
+                {g.hasConflict && (
+                  <AlertTriangle size={13} className="text-amber-400 flex-shrink-0" title="Total issues count conflict — tap to review" />
+                )}
+              </div>
+
+              {/* Issue range / ownership line */}
+              <div className="text-sm text-gray-400 mt-0.5">
+                {g.totalIssues !== null ? (
+                  <span className={g.isComplete ? 'text-green-400' : 'text-amber-400'}>
+                    {g.issueCount} of {g.totalIssues} issue{g.totalIssues !== 1 ? 's' : ''}
+                  </span>
+                ) : (
+                  g.issueRange
+                )}
+              </div>
+
+              {/* Missing issues line */}
+              {!g.isComplete && g.missingIssues.length > 0 && g.missingIssues.length <= 8 && (
+                <div className="text-xs text-red-400 mt-0.5">
+                  Missing: {g.missingIssues.map(n => `#${n}`).join(', ')}
+                </div>
+              )}
+              {!g.isComplete && g.missingIssues.length > 8 && (
+                <div className="text-xs text-red-400 mt-0.5">
+                  Missing {g.missingIssues.length} issues · {g.missingIssues.slice(0, 5).map(n => `#${n}`).join(', ')}…
+                </div>
+              )}
+
+              {/* Complete label */}
+              {g.isComplete && (
+                <div className="text-xs text-green-400 mt-0.5 font-medium">Complete</div>
+              )}
+            </div>
+
+            <ChevronRight size={18} className={`transition-colors flex-shrink-0 ${
+              g.isComplete ? 'text-green-600 group-hover:text-green-400' : 'text-gray-600 group-hover:text-yellow-400'
+            }`} />
           </button>
         ))}
       </div>
