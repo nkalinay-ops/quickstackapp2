@@ -18,6 +18,7 @@ export function Wishlist() {
     priority: 'Medium',
     notes: '',
     total_issues: '',
+    cover_variant: '',
   });
   const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean; action: 'delete' | 'acquire' | null; itemId: string | null; item: WishlistItem | null }>({
     isOpen: false,
@@ -66,6 +67,7 @@ export function Wishlist() {
         priority: formData.priority,
         notes: formData.notes.trim(),
         total_issues: formData.total_issues ? parseInt(formData.total_issues) : null,
+        cover_variant: formData.cover_variant ? parseInt(formData.cover_variant) : null,
       });
 
       if (error) throw error;
@@ -78,6 +80,7 @@ export function Wishlist() {
         priority: 'Medium',
         notes: '',
         total_issues: '',
+        cover_variant: '',
       });
       setShowAddForm(false);
       loadWishlist();
@@ -120,6 +123,7 @@ export function Wishlist() {
         condition: '',
         notes: item.notes,
         total_issues: item.total_issues ?? null,
+        cover_variant: item.cover_variant ?? null,
       });
 
       if (insertError) throw insertError;
@@ -230,6 +234,14 @@ export function Wishlist() {
               onChange={(e) => setFormData({ ...formData, total_issues: e.target.value })}
               className="w-full px-3 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
             />
+            <input
+              type="number"
+              min="1"
+              placeholder="Cover variant (optional, e.g. 2)"
+              value={formData.cover_variant}
+              onChange={(e) => setFormData({ ...formData, cover_variant: e.target.value })}
+              className="w-full px-3 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
+            />
             <div className="flex gap-2">
               {['High', 'Medium', 'Low'].map((p) => (
                 <button
@@ -287,7 +299,8 @@ export function Wishlist() {
                     )}
                     <div className="text-sm text-gray-400 mt-1">
                       {item.issue_number && `#${item.issue_number}`}
-                      {item.issue_number && item.publisher && ' • '}
+                      {item.cover_variant != null && ` · Variant ${item.cover_variant}`}
+                      {(item.issue_number || item.cover_variant != null) && item.publisher && ' • '}
                       {item.publisher}
                     </div>
                     {item.notes && (

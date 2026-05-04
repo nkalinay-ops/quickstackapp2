@@ -17,6 +17,7 @@ export function AddComic() {
   const [condition, setCondition] = useState('');
   const [notes, setNotes] = useState('');
   const [totalIssues, setTotalIssues] = useState('');
+  const [coverVariant, setCoverVariant] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
@@ -262,6 +263,7 @@ export function AddComic() {
       setCondition('');
       setNotes('');
       setTotalIssues('');
+      setCoverVariant('');
       setTotalIssuesConflict(false);
       setCapturedImage(null);
       setDuplicateComic(null);
@@ -313,6 +315,7 @@ export function AddComic() {
         color_image_url: colorImageUrl,
         bw_image_url: bwImageUrl,
         copy_count: 1,
+        cover_variant: coverVariant ? parseInt(coverVariant) : null,
         total_issues: parsedTotal,
         total_issues_conflict: conflict || null,
       });
@@ -328,6 +331,7 @@ export function AddComic() {
       setCondition('');
       setNotes('');
       setTotalIssues('');
+      setCoverVariant('');
       setTotalIssuesConflict(false);
       setCapturedImage(null);
 
@@ -356,6 +360,7 @@ export function AddComic() {
     setCondition('');
     setNotes('');
     setTotalIssues('');
+    setCoverVariant('');
     setTotalIssuesConflict(false);
     setCapturedImage(null);
   };
@@ -427,6 +432,7 @@ export function AddComic() {
         color_image_url: colorImageUrl,
         bw_image_url: bwImageUrl,
         copy_count: 1,
+        cover_variant: coverVariant ? parseInt(coverVariant) : null,
         total_issues: parsedTotal,
         total_issues_conflict: conflict || null,
       });
@@ -442,6 +448,7 @@ export function AddComic() {
       setCondition('');
       setNotes('');
       setTotalIssues('');
+      setCoverVariant('');
       setTotalIssuesConflict(false);
       setCapturedImage(null);
 
@@ -594,6 +601,22 @@ export function AddComic() {
               className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+        </div>
+
+        <div>
+          <label htmlFor="coverVariant" className="block text-sm font-medium text-gray-300 mb-1">
+            Cover Variant
+            <span className="ml-2 text-xs text-gray-500 font-normal">optional · e.g. 1, 2, 3</span>
+          </label>
+          <input
+            id="coverVariant"
+            type="number"
+            min="1"
+            value={coverVariant}
+            onChange={(e) => setCoverVariant(e.target.value)}
+            placeholder="e.g., 2"
+            className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
         </div>
 
         <div>

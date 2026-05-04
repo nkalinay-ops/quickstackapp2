@@ -371,6 +371,7 @@ export function Collection() {
           condition: editedComic.condition.trim(),
           notes: editedComic.notes.trim(),
           copy_count: editedComic.copy_count,
+          cover_variant: editedComic.cover_variant,
           total_issues: editedComic.total_issues,
           total_issues_conflict: editedComic.total_issues_conflict,
         })
@@ -491,6 +492,18 @@ export function Collection() {
                 className="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none" />
             ) : (
               <div className="text-lg">#{displayComic.issue_number}</div>
+            )}
+          </div>
+
+          <div>
+            <div className="text-sm text-gray-400 mb-1">Cover Variant</div>
+            {isEditing ? (
+              <input type="number" min="1" value={displayComic.cover_variant ?? ''}
+                onChange={(e) => setEditedComic({ ...displayComic, cover_variant: e.target.value ? parseInt(e.target.value) : null })}
+                placeholder="e.g., 2"
+                className="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none" />
+            ) : (
+              <div className="text-lg">{displayComic.cover_variant != null ? `Variant ${displayComic.cover_variant}` : '-'}</div>
             )}
           </div>
 
@@ -1031,7 +1044,8 @@ function ComicRow({ comic, onSelect, onDelete }: {
         )}
         <div className="text-sm text-gray-400 mt-1">
           {comic.issue_number && `#${comic.issue_number}`}
-          {comic.issue_number && (comic.publisher || comic.year) && ' • '}
+          {comic.cover_variant != null && ` · Variant ${comic.cover_variant}`}
+          {(comic.issue_number || comic.cover_variant != null) && (comic.publisher || comic.year) && ' • '}
           {comic.publisher}
           {comic.publisher && comic.year && ' • '}
           {comic.year}
