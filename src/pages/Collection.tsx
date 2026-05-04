@@ -3,13 +3,13 @@ import { supabase, Comic } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import {
   Search, Trash2, X, Copy, CreditCard as Edit2, Save, Plus, Minus,
-  ChevronRight, Building2, BookOpen, Bookmark, List, Layers,
+  ChevronRight, Building2, BookOpen, Bookmark, List,
   Star, AlertTriangle,
 } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { AlertModal } from '../components/AlertModal';
 
-type BrowseMode = 'browse' | 'all';
+type BrowseMode = 'publisher' | 'series' | 'all';
 type BrowseLevel = 'publishers' | 'series' | 'stories' | 'issues';
 
 interface PublisherGroup {
@@ -128,7 +128,7 @@ export function Collection() {
   const [loading, setLoading] = useState(true);
 
   // Browse hierarchy state
-  const [browseMode, setBrowseMode] = useState<BrowseMode>('browse');
+  const [browseMode, setBrowseMode] = useState<BrowseMode>('publisher');
   const [browseLevel, setBrowseLevel] = useState<BrowseLevel>('publishers');
   const [selectedPublisher, setSelectedPublisher] = useState('');
   const [selectedSeries, setSelectedSeries] = useState('');
@@ -230,9 +230,36 @@ export function Collection() {
       .sort((a, b) => a.series.localeCompare(b.series));
   };
 
+  // All series across all publishers (for the Series browse root)
+  const seriesRootGroups = (): SeriesGroup[] => {
+    const map = new Map<string, Set<string>>();
+    const counts = new Map<string, number>();
+    for (const c of comics) {
+      if (!map.has(c.series)) map.set(c.series, new Set());
+      if (c.story.trim()) map.get(c.series)!.add(c.story.trim());
+      counts.set(c.series, (counts.get(c.series) || 0) + 1);
+    }
+    const withCovers = comics.filter(c => c.color_image_url || c.bw_image_url);
+    return Array.from(map.entries())
+      .map(([series, storySet]) => {
+        const candidates = withCovers.filter(c => c.series === series);
+        const pick = candidates.length > 0
+          ? candidates[Math.floor(Math.random() * candidates.length)]
+          : null;
+        return {
+          series,
+          storyCount: storySet.size,
+          issueCount: counts.get(series) || 0,
+          coverUrl: pick ? (pick.color_image_url || pick.bw_image_url) : null,
+        };
+      })
+      .sort((a, b) => a.series.localeCompare(b.series));
+  };
+
   const storyGroups = (publisher: string, series: string): StoryGroup[] => {
     const inSeries = comics.filter(c =>
-      (c.publisher.trim() || UNKNOWN_PUBLISHER) === publisher && c.series === series
+      (publisher === '' || (c.publisher.trim() || UNKNOWN_PUBLISHER) === publisher) &&
+      c.series === series
     );
     const map = new Map<string, Comic[]>();
     for (const c of inSeries) {
@@ -286,7 +313,7 @@ export function Collection() {
   const issueList = (publisher: string, series: string, story: string): Comic[] => {
     return comics
       .filter(c =>
-        (c.publisher.trim() || UNKNOWN_PUBLISHER) === publisher &&
+        (publisher === '' || (c.publisher.trim() || UNKNOWN_PUBLISHER) === publisher) &&
         c.series === series &&
         (story === SINGLE_ISSUES ? !c.story.trim() : c.story.trim() === story)
       )
@@ -303,6 +330,12 @@ export function Collection() {
   const drillToSeries = (publisher: string) => {
     setSelectedPublisher(publisher);
     setBrowseLevel('series');
+  };
+
+  const drillToStoriesFromRoot = (series: string) => {
+    setSelectedPublisher('');
+    setSelectedSeries(series);
+    setBrowseLevel('stories');
   };
 
   const drillToStories = (series: string) => {
@@ -325,7 +358,14 @@ export function Collection() {
   const switchMode = (mode: BrowseMode) => {
     setBrowseMode(mode);
     setSearchQuery('');
-    if (mode === 'browse') resetBrowse();
+    if (mode === 'publisher') {
+      resetBrowse();
+    } else if (mode === 'series') {
+      setBrowseLevel('series');
+      setSelectedPublisher('');
+      setSelectedSeries('');
+      setSelectedStory('');
+    }
   };
 
   // ── CRUD ─────────────────────────────────────────────────────────────────
@@ -653,13 +693,22 @@ export function Collection() {
         <h1 className="text-3xl font-bold">My Collection</h1>
         <div className="flex bg-gray-900 border border-gray-800 rounded-lg p-1 gap-1">
           <button
-            onClick={() => switchMode('browse')}
+            onClick={() => switchMode('publisher')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              browseMode === 'browse' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+              browseMode === 'publisher' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
             }`}
           >
-            <Layers size={15} />
-            Browse
+            <Building2 size={15} />
+            Publisher
+          </button>
+          <button
+            onClick={() => switchMode('series')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              browseMode === 'series' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <BookOpen size={15} />
+            Series
           </button>
           <button
             onClick={() => switchMode('all')}
@@ -681,8 +730,7 @@ export function Collection() {
           value={searchQuery}
           onChange={(e) => {
             setSearchQuery(e.target.value);
-            if (browseMode === 'browse' && e.target.value) {
-              // searching always switches to flat all-results view
+            if (browseMode !== 'all' && e.target.value) {
               setBrowseMode('all');
             }
           }}
@@ -695,6 +743,39 @@ export function Collection() {
   // ── Breadcrumb ────────────────────────────────────────────────────────────
 
   const renderBreadcrumb = () => {
+    const isSeriesRoot = browseMode === 'series';
+
+    // Series-root browse: Series → Stories → Issues (no publisher level)
+    if (isSeriesRoot) {
+      if (browseLevel === 'series') return null;
+      const crumbs: { label: string; onClick: () => void }[] = [
+        { label: 'Series', onClick: () => { setBrowseLevel('series'); setSelectedSeries(''); setSelectedStory(''); } },
+      ];
+      if (browseLevel === 'stories' || browseLevel === 'issues') {
+        crumbs.push({ label: selectedSeries, onClick: () => { setBrowseLevel('stories'); setSelectedStory(''); } });
+      }
+      if (browseLevel === 'issues') {
+        crumbs.push({ label: selectedStory, onClick: () => {} });
+      }
+      return (
+        <div className="flex items-center gap-1 flex-wrap mb-4 text-sm">
+          {crumbs.map((crumb, i) => (
+            <span key={i} className="flex items-center gap-1">
+              {i > 0 && <ChevronRight size={14} className="text-gray-600 flex-shrink-0" />}
+              {i < crumbs.length - 1 ? (
+                <button onClick={crumb.onClick} className="text-blue-400 hover:text-blue-300 transition-colors truncate max-w-[140px]">
+                  {crumb.label}
+                </button>
+              ) : (
+                <span className="text-gray-300 truncate max-w-[160px] font-medium">{crumb.label}</span>
+              )}
+            </span>
+          ))}
+        </div>
+      );
+    }
+
+    // Publisher-root browse
     if (browseLevel === 'publishers') return null;
 
     const crumbs: { label: string; onClick: () => void }[] = [
@@ -932,6 +1013,54 @@ export function Collection() {
     );
   };
 
+  // ── Series root list (all series, no publisher filter) ───────────────────
+
+  const renderSeriesRoot = () => {
+    const groups = seriesRootGroups();
+    if (groups.length === 0) {
+      return (
+        <div className="bg-gray-900 rounded-lg p-8 text-center">
+          <p className="text-gray-400 mb-2">Your collection is empty</p>
+          <p className="text-gray-500 text-sm">Start adding comics to build your collection</p>
+        </div>
+      );
+    }
+    return (
+      <div className="space-y-2">
+        <div className="text-gray-400 text-sm mb-3">
+          {groups.length} {groups.length === 1 ? 'series' : 'series'}
+        </div>
+        {groups.map((g) => (
+          <button
+            key={g.series}
+            onClick={() => drillToStoriesFromRoot(g.series)}
+            className="w-full bg-gray-900 rounded-lg p-4 border border-gray-800 hover:border-green-700 transition-colors flex items-center gap-4 text-left group"
+          >
+            {g.coverUrl ? (
+              <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 border border-gray-700">
+                <img src={g.coverUrl} alt={g.series} className="w-full h-full object-cover" />
+              </div>
+            ) : (
+              <div className="w-10 h-10 rounded-lg bg-green-950 border border-green-900 flex items-center justify-center flex-shrink-0">
+                <BookOpen size={20} className="text-green-400" />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="font-semibold text-white truncate">{g.series}</div>
+              <div className="text-sm text-gray-400 mt-0.5">
+                {g.storyCount > 0
+                  ? `${g.storyCount} ${g.storyCount === 1 ? 'story arc' : 'story arcs'} · ${g.issueCount} ${g.issueCount === 1 ? 'issue' : 'issues'}`
+                  : `${g.issueCount} ${g.issueCount === 1 ? 'issue' : 'issues'}`
+                }
+              </div>
+            </div>
+            <ChevronRight size={18} className="text-gray-600 group-hover:text-green-400 transition-colors flex-shrink-0" />
+          </button>
+        ))}
+      </div>
+    );
+  };
+
   // ── Flat all-comics list ──────────────────────────────────────────────────
 
   const renderAllComics = () => (
@@ -971,11 +1100,20 @@ export function Collection() {
     <div className="p-4 max-w-2xl mx-auto">
       {renderHeader()}
 
-      {browseMode === 'browse' && (
+      {browseMode === 'publisher' && (
         <>
           {renderBreadcrumb()}
           {browseLevel === 'publishers' && renderPublishers()}
           {browseLevel === 'series' && renderSeries()}
+          {browseLevel === 'stories' && renderStories()}
+          {browseLevel === 'issues' && renderIssues()}
+        </>
+      )}
+
+      {browseMode === 'series' && (
+        <>
+          {renderBreadcrumb()}
+          {browseLevel === 'series' && renderSeriesRoot()}
           {browseLevel === 'stories' && renderStories()}
           {browseLevel === 'issues' && renderIssues()}
         </>
