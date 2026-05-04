@@ -194,6 +194,7 @@ Deno.serve(async (req: Request) => {
                 p_user_id: userId,
                 p_title: row.series.trim(),
                 p_issue_number: issueNumber,
+                p_story: row.story?.trim() || "",
               }
             );
             duplicateId = duplicateResult;

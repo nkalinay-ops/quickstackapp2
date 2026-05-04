@@ -32,7 +32,7 @@ export function AddComic() {
     message: '',
   });
 
-  const checkForDuplicates = async (comicSeries: string, comicIssueNumber: string): Promise<Comic | null> => {
+  const checkForDuplicates = async (comicSeries: string, comicIssueNumber: string, comicStory = ''): Promise<Comic | null> => {
     if (!user || !comicSeries.trim() || !comicIssueNumber.trim()) return null;
 
     try {
@@ -42,6 +42,7 @@ export function AddComic() {
         .eq('user_id', user.id)
         .ilike('series', comicSeries.trim())
         .ilike('issue_number', comicIssueNumber.trim())
+        .ilike('story', comicStory.trim())
         .maybeSingle();
 
       if (error) {
@@ -112,7 +113,7 @@ export function AddComic() {
 
         if (scannedSeries && scannedIssue) {
           setCheckingDuplicate(true);
-          const duplicate = await checkForDuplicates(scannedSeries, scannedIssue);
+          const duplicate = await checkForDuplicates(scannedSeries, scannedIssue, result.data.story || '');
           setCheckingDuplicate(false);
 
           if (duplicate) {
@@ -395,7 +396,7 @@ export function AddComic() {
 
     if (series.trim() && issueNumber.trim()) {
       setCheckingDuplicate(true);
-      const duplicate = await checkForDuplicates(series, issueNumber);
+      const duplicate = await checkForDuplicates(series, issueNumber, story);
       setCheckingDuplicate(false);
 
       if (duplicate) {
