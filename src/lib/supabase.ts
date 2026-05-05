@@ -24,16 +24,19 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 export type Comic = {
   id: string;
   user_id: string;
-  title: string;
+  series: string;
+  story: string;
   issue_number: string;
   publisher: string;
   year: number | null;
   condition: string;
   notes: string;
-  freeform_text: string;
   color_image_url: string | null;
   bw_image_url: string | null;
   copy_count: number;
+  cover_variant: number | null;
+  total_issues: number | null;
+  total_issues_conflict: boolean | null;
   created_at: string;
   updated_at: string;
 };
@@ -41,10 +44,14 @@ export type Comic = {
 export type WishlistItem = {
   id: string;
   user_id: string;
-  title: string;
+  series: string;
+  story: string;
   issue_number: string;
   publisher: string;
   priority: string;
   notes: string;
+  cover_variant: number | null;
+  total_issues: number | null;
+  total_issues_conflict: boolean | null;
   created_at: string;
 };
