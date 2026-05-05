@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { supabase, Comic } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { CheckCircle2, Plus, Camera, Scan, X } from 'lucide-react';
+import { CheckCircle2, Plus, Camera, Scan, X, AlertTriangle } from 'lucide-react';
 import { CameraCapture } from '../components/CameraCapture';
 import { optimizeImageForOCR } from '../utils/imageOptimizer';
 import DuplicateModal from '../components/DuplicateModal';
@@ -9,12 +9,15 @@ import { AlertModal } from '../components/AlertModal';
 
 export function AddComic() {
   const { user } = useAuth();
-  const [title, setTitle] = useState('');
+  const [series, setSeries] = useState('');
+  const [story, setStory] = useState('');
   const [issueNumber, setIssueNumber] = useState('');
   const [publisher, setPublisher] = useState('');
   const [year, setYear] = useState('');
   const [condition, setCondition] = useState('');
   const [notes, setNotes] = useState('');
+  const [totalIssues, setTotalIssues] = useState('');
+  const [coverVariant, setCoverVariant] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
@@ -23,21 +26,23 @@ export function AddComic() {
   const [duplicateComic, setDuplicateComic] = useState<Comic | null>(null);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [checkingDuplicate, setCheckingDuplicate] = useState(false);
+  const [totalIssuesConflict, setTotalIssuesConflict] = useState(false);
   const [alertModal, setAlertModal] = useState<{ isOpen: boolean; title?: string; message: string; type?: 'error' | 'success' | 'info' }>({
     isOpen: false,
     message: '',
   });
 
-  const checkForDuplicates = async (comicTitle: string, comicIssueNumber: string): Promise<Comic | null> => {
-    if (!user || !comicTitle.trim() || !comicIssueNumber.trim()) return null;
+  const checkForDuplicates = async (comicSeries: string, comicIssueNumber: string, comicStory = ''): Promise<Comic | null> => {
+    if (!user || !comicSeries.trim() || !comicIssueNumber.trim()) return null;
 
     try {
       const { data, error } = await supabase
         .from('comics')
         .select('*')
         .eq('user_id', user.id)
-        .ilike('title', comicTitle.trim())
+        .ilike('series', comicSeries.trim())
         .ilike('issue_number', comicIssueNumber.trim())
+        .ilike('story', comicStory.trim())
         .maybeSingle();
 
       if (error) {
@@ -89,17 +94,26 @@ export function AddComic() {
       }
 
       if (result.success && result.data) {
-        const scannedTitle = result.data.title || '';
+        const scannedSeries = result.data.series || '';
         const scannedIssue = result.data.issue_number || '';
 
-        setTitle(scannedTitle);
+        setSeries(scannedSeries);
+        setStory(result.data.story || '');
         setIssueNumber(scannedIssue);
         setPublisher(result.data.publisher || '');
         setYear(result.data.year ? result.data.year.toString() : '');
+        const scannedTotal = result.data.total_issues ?? null;
+        setTotalIssues(scannedTotal ? scannedTotal.toString() : '');
+        setCoverVariant(result.data.cover_variant ? result.data.cover_variant.toString() : '');
 
-        if (scannedTitle && scannedIssue) {
+        if (scannedTotal && result.data.story !== undefined) {
+          const conflict = await checkTotalIssuesConflict(result.data.series || '', result.data.story || '', scannedTotal);
+          setTotalIssuesConflict(conflict);
+        }
+
+        if (scannedSeries && scannedIssue) {
           setCheckingDuplicate(true);
-          const duplicate = await checkForDuplicates(scannedTitle, scannedIssue);
+          const duplicate = await checkForDuplicates(scannedSeries, scannedIssue, result.data.story || '');
           setCheckingDuplicate(false);
 
           if (duplicate) {
@@ -243,12 +257,16 @@ export function AddComic() {
 
       setShowDuplicateModal(false);
       setSuccess(true);
-      setTitle('');
+      setSeries('');
+      setStory('');
       setIssueNumber('');
       setPublisher('');
       setYear('');
       setCondition('');
       setNotes('');
+      setTotalIssues('');
+      setCoverVariant('');
+      setTotalIssuesConflict(false);
       setCapturedImage(null);
       setDuplicateComic(null);
 
@@ -284,9 +302,13 @@ export function AddComic() {
         bwImageUrl = bwUrl;
       }
 
+      const parsedTotal = totalIssues ? parseInt(totalIssues) : null;
+      const conflict = await checkTotalIssuesConflict(series, story, parsedTotal);
+
       const { error } = await supabase.from('comics').insert({
         user_id: user!.id,
-        title: title.trim(),
+        series: series.trim(),
+        story: story.trim(),
         issue_number: issueNumber.trim(),
         publisher: publisher.trim(),
         year: year ? parseInt(year) : null,
@@ -295,17 +317,24 @@ export function AddComic() {
         color_image_url: colorImageUrl,
         bw_image_url: bwImageUrl,
         copy_count: 1,
+        cover_variant: coverVariant ? parseInt(coverVariant) : null,
+        total_issues: parsedTotal,
+        total_issues_conflict: conflict || null,
       });
 
       if (error) throw error;
 
       setSuccess(true);
-      setTitle('');
+      setSeries('');
+      setStory('');
       setIssueNumber('');
       setPublisher('');
       setYear('');
       setCondition('');
       setNotes('');
+      setTotalIssues('');
+      setCoverVariant('');
+      setTotalIssuesConflict(false);
       setCapturedImage(null);
 
       setTimeout(() => setSuccess(false), 2000);
@@ -325,23 +354,49 @@ export function AddComic() {
   const handleDiscardScan = () => {
     setShowDuplicateModal(false);
     setDuplicateComic(null);
-    setTitle('');
+    setSeries('');
+    setStory('');
     setIssueNumber('');
     setPublisher('');
     setYear('');
     setCondition('');
     setNotes('');
+    setTotalIssues('');
+    setCoverVariant('');
+    setTotalIssuesConflict(false);
     setCapturedImage(null);
+  };
+
+  const checkTotalIssuesConflict = async (
+    comicSeries: string,
+    comicStory: string,
+    newTotal: number | null
+  ): Promise<boolean> => {
+    if (!user || newTotal === null) return false;
+    try {
+      const { data } = await supabase
+        .from('comics')
+        .select('total_issues')
+        .eq('user_id', user.id)
+        .ilike('series', comicSeries.trim())
+        .ilike('story', comicStory.trim())
+        .not('total_issues', 'is', null)
+        .limit(1)
+        .maybeSingle();
+      if (data && data.total_issues !== newTotal) return true;
+    } catch {
+      // non-critical, don't block save
+    }
+    return false;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !title.trim()) return;
+    if (!user || !series.trim()) return;
 
-    // Always check for duplicates if we have both title and issue number
-    if (title.trim() && issueNumber.trim()) {
+    if (series.trim() && issueNumber.trim()) {
       setCheckingDuplicate(true);
-      const duplicate = await checkForDuplicates(title, issueNumber);
+      const duplicate = await checkForDuplicates(series, issueNumber, story);
       setCheckingDuplicate(false);
 
       if (duplicate) {
@@ -364,9 +419,13 @@ export function AddComic() {
         bwImageUrl = bwUrl;
       }
 
+      const parsedTotal = totalIssues ? parseInt(totalIssues) : null;
+      const conflict = await checkTotalIssuesConflict(series, story, parsedTotal);
+
       const { error } = await supabase.from('comics').insert({
         user_id: user.id,
-        title: title.trim(),
+        series: series.trim(),
+        story: story.trim(),
         issue_number: issueNumber.trim(),
         publisher: publisher.trim(),
         year: year ? parseInt(year) : null,
@@ -375,17 +434,24 @@ export function AddComic() {
         color_image_url: colorImageUrl,
         bw_image_url: bwImageUrl,
         copy_count: 1,
+        cover_variant: coverVariant ? parseInt(coverVariant) : null,
+        total_issues: parsedTotal,
+        total_issues_conflict: conflict || null,
       });
 
       if (error) throw error;
 
       setSuccess(true);
-      setTitle('');
+      setSeries('');
+      setStory('');
       setIssueNumber('');
       setPublisher('');
       setYear('');
       setCondition('');
       setNotes('');
+      setTotalIssues('');
+      setCoverVariant('');
+      setTotalIssuesConflict(false);
       setCapturedImage(null);
 
       setTimeout(() => setSuccess(false), 2000);
@@ -480,18 +546,32 @@ export function AddComic() {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="title" className="block text-sm font-medium text-gray-300 mb-1">
-            Title <span className="text-red-400">*</span>
+          <label htmlFor="series" className="block text-sm font-medium text-gray-300 mb-1">
+            Series <span className="text-red-400">*</span>
           </label>
           <input
-            id="title"
+            id="series"
             type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            value={series}
+            onChange={(e) => setSeries(e.target.value)}
             required
             placeholder="e.g., The Amazing Spider-Man"
             className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg"
             autoFocus
+          />
+        </div>
+
+        <div>
+          <label htmlFor="story" className="block text-sm font-medium text-gray-300 mb-1">
+            Story
+          </label>
+          <input
+            id="story"
+            type="text"
+            value={story}
+            onChange={(e) => setStory(e.target.value)}
+            placeholder="e.g., Kraven's Last Hunt"
+            className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
 
@@ -523,6 +603,50 @@ export function AddComic() {
               className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+        </div>
+
+        <div>
+          <label htmlFor="coverVariant" className="block text-sm font-medium text-gray-300 mb-1">
+            Cover Variant
+            <span className="ml-2 text-xs text-gray-500 font-normal">optional · e.g. 1, 2, 3</span>
+          </label>
+          <input
+            id="coverVariant"
+            type="number"
+            min="1"
+            value={coverVariant}
+            onChange={(e) => setCoverVariant(e.target.value)}
+            placeholder="e.g., 2"
+            className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="totalIssues" className="block text-sm font-medium text-gray-300 mb-1">
+            Total Issues in Arc
+            <span className="ml-2 text-xs text-gray-500 font-normal">optional · e.g. "4" if cover says "#2 of 4"</span>
+          </label>
+          <input
+            id="totalIssues"
+            type="number"
+            min="1"
+            value={totalIssues}
+            onChange={(e) => { setTotalIssues(e.target.value); setTotalIssuesConflict(false); }}
+            placeholder="e.g., 6"
+            className={`w-full px-4 py-3 bg-gray-900 text-white rounded-lg border focus:outline-none focus:ring-2 transition-colors ${
+              totalIssuesConflict
+                ? 'border-amber-600 focus:border-amber-500 focus:ring-amber-500'
+                : 'border-gray-800 focus:border-blue-500 focus:ring-blue-500'
+            }`}
+          />
+          {totalIssuesConflict && (
+            <div className="mt-2 flex items-start gap-2 bg-amber-950 border border-amber-800 rounded-lg px-3 py-2">
+              <AlertTriangle size={15} className="text-amber-400 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-amber-300">
+                This arc already has a different total recorded. Please verify and correct the number above before saving.
+              </p>
+            </div>
+          )}
         </div>
 
         <div>
@@ -575,7 +699,7 @@ export function AddComic() {
 
         <button
           type="submit"
-          disabled={loading || !title.trim()}
+          disabled={loading || !series.trim()}
           className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg"
         >
           {success ? (

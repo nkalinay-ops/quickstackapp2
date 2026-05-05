@@ -9,7 +9,8 @@ const corsHeaders = {
 };
 
 interface ComicRow {
-  title: string;
+  series: string;
+  story?: string;
   issue_number?: string;
   publisher?: string;
   year?: string | number;
@@ -133,12 +134,12 @@ Deno.serve(async (req: Request) => {
         const rowNumber = i + index + 1;
 
         try {
-          if (!row.title || row.title.trim() === "") {
+          if (!row.series || row.series.trim() === "") {
             await serviceClient.from("bulk_upload_errors").insert({
               job_id,
               row_number: rowNumber,
               error_type: "validation",
-              error_message: "Title is required and cannot be empty",
+              error_message: "Series is required and cannot be empty",
               row_data: row,
             });
             failedCount++;
@@ -191,8 +192,9 @@ Deno.serve(async (req: Request) => {
               "check_comic_duplicate",
               {
                 p_user_id: userId,
-                p_title: row.title.trim(),
+                p_title: row.series.trim(),
                 p_issue_number: issueNumber,
+                p_story: row.story?.trim() || "",
               }
             );
             duplicateId = duplicateResult;
@@ -224,7 +226,8 @@ Deno.serve(async (req: Request) => {
               .from("comics")
               .insert({
                 user_id: userId,
-                title: row.title.trim(),
+                series: row.series.trim(),
+                story: row.story?.trim() || "",
                 issue_number: issueNumber,
                 publisher: row.publisher?.trim() || "",
                 year: yearValue,
