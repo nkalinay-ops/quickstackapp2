@@ -2,10 +2,13 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
+export type UserTier = 'free' | 'paid' | 'admin';
+
 type AuthContextType = {
   user: User | null;
   loading: boolean;
   isAdmin: boolean;
+  userTier: UserTier;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -21,6 +24,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [userTier, setUserTier] = useState<UserTier>('free');
 
   const checkTerminationStatus = async (userId: string): Promise<boolean> => {
     const { data } = await supabase
@@ -35,14 +39,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchAdminStatus = async (userId: string) => {
     const { data, error } = await supabase
       .from('user_profiles')
-      .select('is_admin')
+      .select('is_admin, user_tier')
       .eq('id', userId)
       .maybeSingle();
 
     if (!error && data) {
       setIsAdmin(data.is_admin || false);
+      setUserTier((data.user_tier as UserTier) || 'free');
     } else {
       setIsAdmin(false);
+      setUserTier('free');
     }
   };
 
@@ -94,6 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } else {
             setUser(null);
             setIsAdmin(false);
+            setUserTier('free');
           }
           setLoading(false);
         }
@@ -180,7 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, isAdmin, signIn, signUp, signOut, refreshAdminStatus, resetPassword, updatePassword, deleteAccount }}>
+    <AuthContext.Provider value={{ user, loading, isAdmin, userTier, signIn, signUp, signOut, refreshAdminStatus, resetPassword, updatePassword, deleteAccount }}>
       {children}
     </AuthContext.Provider>
   );

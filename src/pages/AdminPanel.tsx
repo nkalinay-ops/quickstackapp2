@@ -12,6 +12,8 @@ interface UserTermination {
   reason: string | null;
 }
 
+type UserTier = 'free' | 'paid' | 'admin';
+
 interface UserProfile {
   id: string;
   email: string | null;
@@ -21,6 +23,8 @@ interface UserProfile {
   admin_granted_at: string | null;
   can_bulk_upload: boolean;
   bulk_upload_granted_at: string | null;
+  user_tier: UserTier;
+  monthly_scan_count: number;
   created_at: string;
   last_sign_in_at: string | null;
   termination: UserTermination | null;
@@ -287,13 +291,42 @@ export function AdminPanel() {
     }
   };
 
+  const handleSetTier = async (userId: string, tier: 'free' | 'paid') => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-admin-users`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({ action: 'set_tier', userId, tier }),
+        }
+      );
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to update tier');
+      }
+
+      await loadUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update tier');
+    }
+  };
+
   const stats = {
     totalUsers: users.length,
     betaUsers: users.filter(u => u.is_beta_user).length,
     adminUsers: users.filter(u => u.is_admin).length,
     activeBetaKeys: betaKeys.filter(k => k.is_active && !k.redeemed_at).length,
     terminatedUsers: users.filter(u => u.termination).length,
-    bulkUploadUsers: users.filter(u => u.can_bulk_upload).length,
+    paidUsers: users.filter(u => u.user_tier === 'paid').length,
   };
 
   if (loading) {
@@ -363,6 +396,16 @@ export function AdminPanel() {
             </div>
           </div>
         </div>
+
+        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+          <div className="flex items-center gap-3">
+            <Upload className="w-8 h-8 text-blue-400" />
+            <div>
+              <p className="text-gray-400 text-sm">Paid Users</p>
+              <p className="text-2xl font-bold text-white">{stats.paidUsers}</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="bg-gray-800 rounded-lg border border-gray-700">
@@ -416,7 +459,7 @@ export function AdminPanel() {
                             Joined {new Date(user.created_at).toLocaleDateString()}
                           </p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                           {user.termination && (
                             <span className="px-3 py-1 bg-red-500/10 text-red-400 rounded-full text-sm border border-red-500/20">
                               Terminated
@@ -425,6 +468,16 @@ export function AdminPanel() {
                           {user.is_admin && (
                             <span className="px-3 py-1 bg-orange-500/10 text-orange-400 rounded-full text-sm border border-orange-500/20">
                               Admin
+                            </span>
+                          )}
+                          {!user.is_admin && user.user_tier === 'paid' && (
+                            <span className="px-3 py-1 bg-blue-500/10 text-blue-400 rounded-full text-sm border border-blue-500/20">
+                              Paid
+                            </span>
+                          )}
+                          {!user.is_admin && user.user_tier === 'free' && (
+                            <span className="px-3 py-1 bg-gray-500/10 text-gray-400 rounded-full text-sm border border-gray-500/20">
+                              Free
                             </span>
                           )}
                           {user.is_beta_user && (
@@ -490,29 +543,63 @@ export function AdminPanel() {
                       </div>
 
                       {!user.termination && (
-                        <div className="flex gap-3">
-                          {!user.is_admin ? (
-                            <button
-                              onClick={() => handlePromoteAdmin(user.id)}
-                              className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors"
-                            >
-                              Promote to Admin
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleRevokeAdmin(user.id)}
-                              className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
-                            >
-                              Revoke Admin
-                            </button>
+                        <div className="space-y-3">
+                          {!user.is_admin && (
+                            <div className="flex items-center gap-3">
+                              <span className="text-gray-400 text-sm">Plan:</span>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleSetTier(user.id, 'free')}
+                                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                                    user.user_tier === 'free'
+                                      ? 'bg-gray-600 text-white'
+                                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700'
+                                  }`}
+                                >
+                                  Free
+                                </button>
+                                <button
+                                  onClick={() => handleSetTier(user.id, 'paid')}
+                                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                                    user.user_tier === 'paid'
+                                      ? 'bg-blue-600 text-white'
+                                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700'
+                                  }`}
+                                >
+                                  Paid
+                                </button>
+                              </div>
+                              <span className="text-gray-600 text-xs">
+                                {user.user_tier === 'free'
+                                  ? `${user.monthly_scan_count ?? 0}/20 scans this month`
+                                  : 'Unlimited scans + bulk upload'}
+                              </span>
+                            </div>
                           )}
-                          <button
-                            onClick={() => handleTerminateClick(user.id)}
-                            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors flex items-center gap-2"
-                          >
-                            <XCircle className="w-4 h-4" />
-                            Terminate Access
-                          </button>
+                          <div className="flex gap-3">
+                            {!user.is_admin ? (
+                              <button
+                                onClick={() => handlePromoteAdmin(user.id)}
+                                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors"
+                              >
+                                Promote to Admin
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleRevokeAdmin(user.id)}
+                                className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
+                              >
+                                Revoke Admin
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleTerminateClick(user.id)}
+                              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors flex items-center gap-2"
+                            >
+                              <XCircle className="w-4 h-4" />
+                              Terminate Access
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
