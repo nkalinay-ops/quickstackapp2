@@ -18,7 +18,8 @@ interface BulkUploadJob {
 }
 
 interface ComicRow {
-  title: string;
+  series: string;
+  story?: string;
   issue_number?: string;
   publisher?: string;
   year?: string | number;
@@ -94,15 +95,17 @@ export function BulkUpload() {
   const downloadTemplate = () => {
     const template = [
       {
-        Title: 'The Amazing Spider-Man',
-        'Issue Number': '300',
+        Series: 'The Amazing Spider-Man',
+        Story: "Kraven's Last Hunt",
+        'Issue Number': '294',
         Publisher: 'Marvel',
         Year: '1988',
         Condition: 'Near Mint',
-        Notes: 'First appearance of Venom',
+        Notes: 'Part 1 of 6',
       },
       {
-        Title: 'Batman',
+        Series: 'Batman',
+        Story: '',
         'Issue Number': '1',
         Publisher: 'DC Comics',
         Year: '1940',
@@ -159,7 +162,8 @@ export function BulkUpload() {
   const normalizeColumnName = (name: string): string => {
     const normalized = name.toLowerCase().trim();
 
-    if (['title', 'comic title'].includes(normalized)) return 'title';
+    if (['series', 'comic series', 'title', 'comic title'].includes(normalized)) return 'series';
+    if (['story', 'story title', 'arc', 'arc title', 'subtitle'].includes(normalized)) return 'story';
     if (['issue', 'issue number', 'issue #', 'issuenumber', 'issue_number'].includes(normalized)) return 'issue_number';
     if (['publisher'].includes(normalized)) return 'publisher';
     if (['year', 'publication year'].includes(normalized)) return 'year';
@@ -188,7 +192,8 @@ export function BulkUpload() {
             });
 
             return {
-              title: normalizedRow.title || '',
+              series: normalizedRow.series || '',
+              story: normalizedRow.story || '',
               issue_number: normalizedRow.issue_number || '',
               publisher: normalizedRow.publisher || '',
               year: normalizedRow.year || '',
@@ -408,7 +413,7 @@ export function BulkUpload() {
             </li>
             <li className="flex gap-2">
               <span className="font-bold text-blue-500">2.</span>
-              <span>Fill in your comic data (Title is required, all other fields optional)</span>
+              <span>Fill in your comic data (Series is required, all other fields optional)</span>
             </li>
             <li className="flex gap-2">
               <span className="font-bold text-blue-500">3.</span>
