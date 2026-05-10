@@ -34,13 +34,17 @@ export function AddComic() {
     message: '',
   });
   const [monthlyScanCount, setMonthlyScanCount] = useState<number | null>(null);
+  const [scanRenewalInterval, setScanRenewalInterval] = useState<'month' | 'day'>('month');
 
   useEffect(() => {
     if (!user || userTier !== 'free') return;
     supabase
       .rpc('get_user_scan_info', { p_user_id: user.id })
       .then(({ data }) => {
-        if (data) setMonthlyScanCount(data.monthly_scan_count ?? 0);
+        if (data) {
+          setMonthlyScanCount(data.monthly_scan_count ?? 0);
+          setScanRenewalInterval(data.renewal_interval === 'day' ? 'day' : 'month');
+        }
       });
   }, [user, userTier]);
 
@@ -98,10 +102,13 @@ export function AddComic() {
         console.error('Scan error:', result);
         if (response.status === 429 && result.limitReached) {
           setMonthlyScanCount(FREE_SCAN_LIMIT);
+          const resetMsg = scanRenewalInterval === 'day'
+            ? 'Your limit resets tomorrow at midnight.'
+            : 'Your limit resets on the 1st of next month.';
           setAlertModal({
             isOpen: true,
-            title: 'Monthly Scan Limit Reached',
-            message: `You have used all ${FREE_SCAN_LIMIT} scans for this month. Your limit resets on the 1st of next month. Please enter comic details manually, or upgrade to a paid plan for unlimited scans.`,
+            title: 'Scan Limit Reached',
+            message: `You have used all ${FREE_SCAN_LIMIT} scans for this period. ${resetMsg} Please enter comic details manually, or upgrade to a paid plan for unlimited scans.`,
             type: 'info',
           });
         } else {
@@ -543,8 +550,8 @@ export function AddComic() {
               }`}>
                 <span>
                   {monthlyScanCount >= FREE_SCAN_LIMIT
-                    ? 'Monthly scan limit reached'
-                    : `${monthlyScanCount} of ${FREE_SCAN_LIMIT} scans used this month`}
+                    ? `${scanRenewalInterval === 'day' ? 'Daily' : 'Monthly'} scan limit reached`
+                    : `${monthlyScanCount} of ${FREE_SCAN_LIMIT} scans used this ${scanRenewalInterval === 'day' ? 'day' : 'month'}`}
                 </span>
                 {monthlyScanCount >= FREE_SCAN_LIMIT && (
                   <span className="flex items-center gap-1 text-xs font-medium text-amber-400">

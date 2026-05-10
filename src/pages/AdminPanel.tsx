@@ -1,9 +1,18 @@
 import { useState, useEffect } from 'react';
-import { Shield, Users, Key, ChevronDown, ChevronUp, XCircle, Upload } from 'lucide-react';
+import { Shield, Users, Key, ChevronDown, ChevronUp, XCircle, Upload, Settings, AlertTriangle, Clock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { PromptModal } from '../components/PromptModal';
 import { ConfirmModal } from '../components/ConfirmModal';
+
+type ScanRenewalInterval = 'month' | 'day';
+
+interface AppSetting {
+  key: string;
+  value: string;
+  updated_at: string;
+  updated_by: string | null;
+}
 
 interface UserTermination {
   user_id: string;
@@ -56,6 +65,9 @@ export function AdminPanel() {
     userId: null,
     reason: '',
   });
+  const [scanRenewalInterval, setScanRenewalInterval] = useState<ScanRenewalInterval>('month');
+  const [scanRenewalSetting, setScanRenewalSetting] = useState<AppSetting | null>(null);
+  const [savingInterval, setSavingInterval] = useState(false);
 
   const loadUsers = async () => {
     try {
@@ -115,10 +127,49 @@ export function AdminPanel() {
     }
   };
 
+  const loadAppSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('*')
+        .eq('key', 'scan_renewal_interval')
+        .maybeSingle();
+
+      if (error) throw error;
+      if (data) {
+        setScanRenewalSetting(data as AppSetting);
+        setScanRenewalInterval((data.value as ScanRenewalInterval) || 'month');
+      }
+    } catch (err) {
+      console.error('Failed to load app settings:', err);
+    }
+  };
+
+  const handleScanRenewalChange = async (newInterval: ScanRenewalInterval) => {
+    setSavingInterval(true);
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const { data, error } = await supabase
+        .from('app_settings')
+        .update({ value: newInterval, updated_at: new Date().toISOString(), updated_by: currentUser?.id ?? null })
+        .eq('key', 'scan_renewal_interval')
+        .select()
+        .maybeSingle();
+
+      if (error) throw error;
+      setScanRenewalInterval(newInterval);
+      if (data) setScanRenewalSetting(data as AppSetting);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update scan renewal interval');
+    } finally {
+      setSavingInterval(false);
+    }
+  };
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      await Promise.all([loadUsers(), loadBetaKeys()]);
+      await Promise.all([loadUsers(), loadBetaKeys(), loadAppSettings()]);
       setLoading(false);
     };
     loadData();
@@ -355,6 +406,68 @@ export function AdminPanel() {
           </button>
         </div>
       )}
+
+      {/* System Settings */}
+      <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Settings className="w-5 h-5 text-gray-400" />
+          <h2 className="text-lg font-semibold text-white">System Settings</h2>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+          <div className="flex-1">
+            <p className="text-sm font-medium text-gray-300 mb-1 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-gray-400" />
+              Scan Renewal Interval
+            </p>
+            <p className="text-xs text-gray-500">
+              Controls when free-user scan counts reset. Use Daily to test renewal logic.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleScanRenewalChange('month')}
+              disabled={savingInterval}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
+                scanRenewalInterval === 'month'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600'
+              }`}
+            >
+              Monthly
+            </button>
+            <button
+              onClick={() => handleScanRenewalChange('day')}
+              disabled={savingInterval}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
+                scanRenewalInterval === 'day'
+                  ? 'bg-amber-600 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600'
+              }`}
+            >
+              Daily
+            </button>
+          </div>
+        </div>
+
+        {scanRenewalInterval === 'day' && (
+          <div className="mt-4 flex items-start gap-2 bg-amber-950/60 border border-amber-700/50 rounded-lg px-4 py-3">
+            <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-amber-300 text-sm font-medium">Testing mode active</p>
+              <p className="text-amber-400/80 text-xs mt-0.5">
+                Free-user scan counts reset daily at midnight. Switch back to Monthly before going to production.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {scanRenewalSetting?.updated_at && (
+          <p className="text-xs text-gray-600 mt-3">
+            Last changed {new Date(scanRenewalSetting.updated_at).toLocaleString()}
+          </p>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
