@@ -14,7 +14,7 @@ type AuthContextType = {
   signOut: () => Promise<void>;
   refreshAdminStatus: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
-  updatePassword: (newPassword: string) => Promise<void>;
+  updatePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   deleteAccount: () => Promise<void>;
 };
 
@@ -164,7 +164,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   };
 
-  const updatePassword = async (newPassword: string) => {
+  const updatePassword = async (currentPassword: string, newPassword: string) => {
+    if (!user?.email) throw new Error('No authenticated user');
+    // Re-authenticate with the current password to verify it before allowing the change.
+    const { error: reAuthError } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: currentPassword,
+    });
+    if (reAuthError) throw new Error('Current password is incorrect');
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) throw error;
   };

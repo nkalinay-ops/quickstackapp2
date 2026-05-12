@@ -76,7 +76,7 @@ export function Settings() {
     setPasswordLoading(true);
 
     try {
-      await updatePassword(newPassword);
+      await updatePassword(currentPassword, newPassword);
       setPasswordSuccess('Password updated successfully');
       setCurrentPassword('');
       setNewPassword('');

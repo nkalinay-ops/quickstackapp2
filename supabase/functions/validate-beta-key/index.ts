@@ -145,14 +145,17 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Upsert so the row is created even if the trigger hasn't fired yet.
+    // The trigger will either have already created the row (update path) or
+    // this will create it directly (insert path). Either way beta fields are set.
     const { error: profileError } = await supabase
       .from("user_profiles")
-      .update({
+      .upsert({
+        id: userId,
         is_beta_user: true,
         beta_key_redeemed: normalizedKeyCode,
         updated_at: new Date().toISOString(),
-      })
-      .eq("id", userId);
+      }, { onConflict: "id" });
 
     if (profileError) {
       console.error("Error updating user profile:", profileError);
