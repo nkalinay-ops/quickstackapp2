@@ -24,12 +24,17 @@ Deno.serve(async (req: Request) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
 
-    if (!supabaseUrl || !supabaseServiceKey) {
+    if (!supabaseUrl || !supabaseServiceKey || !supabaseAnonKey) {
       throw new Error("Missing Supabase environment variables");
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+    // Admin client for all DB operations. persistSession:false is not enough —
+    // auth.signUp() still overwrites the internal session, causing subsequent
+    // DB calls to run as the new user (not service_role). We use admin.createUser()
+    // instead of signUp() so this client's identity is never mutated.
+    const adminClient = createClient(supabaseUrl, supabaseServiceKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
@@ -48,7 +53,7 @@ Deno.serve(async (req: Request) => {
     const normalizedKeyCode = keyCode.trim().toUpperCase();
 
     // --- Step 1: Validate the beta key ---
-    const { data: betaKey, error: keyError } = await supabase
+    const { data: betaKey, error: keyError } = await adminClient
       .from("beta_keys")
       .select("*")
       .eq("key_code", normalizedKeyCode)
@@ -105,16 +110,19 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // --- Step 2: Create the user account ---
-    const { data: authData, error: signUpError } = await supabase.auth.signUp({
+    // --- Step 2: Create the user account via admin API ---
+    // admin.createUser() never touches adminClient's session state, so all
+    // subsequent adminClient DB operations continue to run as service_role.
+    const { data: adminUserData, error: createUserError } = await adminClient.auth.admin.createUser({
       email,
       password,
+      email_confirm: true,
     });
 
-    if (signUpError) {
-      console.error("Error signing up user:", signUpError);
+    if (createUserError) {
+      console.error("Error creating user:", createUserError);
       return new Response(
-        JSON.stringify({ error: signUpError.message }),
+        JSON.stringify({ error: createUserError.message }),
         {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -122,7 +130,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    if (!authData.user) {
+    if (!adminUserData.user) {
       return new Response(
         JSON.stringify({ error: "Failed to create user account" }),
         {
@@ -132,24 +140,19 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const userId = authData.user.id;
+    const userId = adminUserData.user.id;
 
-    // --- Step 3: Get session ---
-    let session = authData.session;
-    if (!session) {
-      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (!signInError && signInData.session) {
-        session = signInData.session;
-      }
-    }
+    // --- Step 3: Get session via a separate anon client ---
+    // admin.createUser() returns no session; sign in separately using a
+    // dedicated anon client so the admin client remains unaffected.
+    const anonClient = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const { data: signInData } = await anonClient.auth.signInWithPassword({ email, password });
+    const session = signInData?.session ?? null;
 
     // --- Step 4: Activate beta access on the user profile ---
-    // The handle_new_user trigger fires synchronously on auth.users INSERT,
-    // so the profile row already exists by the time signUp returns.
-    const { data: updatedProfile, error: profileError } = await supabase
+    const { data: updatedProfile, error: profileError } = await adminClient
       .from("user_profiles")
       .update({
         is_beta_user: true,
@@ -181,11 +184,8 @@ Deno.serve(async (req: Request) => {
     }
 
     // --- Step 5: Mark the beta key as redeemed ---
-    // No .select() appended — PostgREST returns 204 No Content on success.
-    // Chaining .select() caused a silent failure because supabase-js requires
-    // a SELECT RLS policy to return RETURNING rows, even when the UPDATE itself
-    // succeeds. We only check redeemError; absence of error means success.
-    const { error: redeemError } = await supabase
+    // No .select() — PostgREST returns 204 No Content on success.
+    const { error: redeemError } = await adminClient
       .from("beta_keys")
       .update({
         redeemed_at: new Date().toISOString(),
@@ -212,8 +212,8 @@ Deno.serve(async (req: Request) => {
         success: true,
         message: "Account created successfully with beta access",
         user: {
-          id: authData.user.id,
-          email: authData.user.email,
+          id: adminUserData.user.id,
+          email: adminUserData.user.email,
         },
         session,
       }),

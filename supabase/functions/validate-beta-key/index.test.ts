@@ -2,11 +2,7 @@
  * Unit tests for validate-beta-key edge function.
  *
  * Run with:
- *   ~/.deno/bin/deno test --allow-env --allow-net index.test.ts
- *
- * Stubs capture actual argument values passed to every .eq() call so that
- * bugs like "wrong column used for update" are caught at query-construction
- * level. The key update intentionally has NO .select() — we only check error.
+ *   /home/appuser/.deno/bin/deno test --allow-env --allow-net index.test.ts
  */
 
 import { assertEquals, assertExists } from "jsr:@std/assert@0.226";
@@ -41,30 +37,31 @@ interface EqCall {
 interface StubOptions {
   betaKey?: Record<string, unknown> | null;
   betaKeyError?: { message: string } | null;
-  signUpUser?: { id: string; email: string } | null;
-  signUpError?: { message: string } | null;
-  signUpSession?: Record<string, unknown> | null;
+  createUser?: { id: string; email: string } | null;
+  createUserError?: { message: string } | null;
+  signInSession?: Record<string, unknown> | null;
   profileUpdateRows?: { id: string }[];
   profileUpdateError?: { message: string } | null;
   keyUpdateError?: { message: string } | null;
 }
 
 // deno-lint-ignore no-explicit-any
-type SupabaseStubClient = any;
+type AnyClient = any;
 
 interface Stub {
-  client: SupabaseStubClient;
+  adminClient: AnyClient;
+  anonClient: AnyClient;
   eqCalls: EqCall[];
 }
 
-function makeSupabaseStub(opts: StubOptions): Stub {
+function makeStub(opts: StubOptions): Stub {
   const eqCalls: EqCall[] = [];
 
   function recordEq(table: string, operation: "select" | "update", col: string, val: unknown) {
     eqCalls.push({ table, operation, column: col, value: val });
   }
 
-  const client = {
+  const adminClient = {
     from(table: string) {
       return {
         select(_cols: string) {
@@ -89,12 +86,9 @@ function makeSupabaseStub(opts: StubOptions): Stub {
           return {
             eq(col: string, val: unknown) {
               recordEq(table, "update", col, val);
-              // Key update has no .select() — returns { error } directly.
-              // Profile update chains .select("id") — returns { data, error }.
               if (table === "beta_keys") {
-                return Promise.resolve({
-                  error: opts.keyUpdateError ?? null,
-                });
+                // No .select() on key update — returns { error } directly
+                return Promise.resolve({ error: opts.keyUpdateError ?? null });
               }
               // user_profiles update chains .select("id")
               return {
@@ -111,38 +105,43 @@ function makeSupabaseStub(opts: StubOptions): Stub {
       };
     },
     auth: {
-      signUp(_creds: unknown) {
-        if (opts.signUpError) {
+      admin: {
+        createUser(_params: unknown) {
+          if (opts.createUserError) {
+            return Promise.resolve({ data: { user: null }, error: opts.createUserError });
+          }
           return Promise.resolve({
-            data: { user: null, session: null },
-            error: opts.signUpError,
+            data: { user: opts.createUser ?? { id: "user-123", email: "test@example.com" } },
+            error: null,
           });
-        }
-        return Promise.resolve({
-          data: {
-            user: opts.signUpUser ?? { id: "user-123", email: "test@example.com" },
-            session: opts.signUpSession ?? { access_token: "tok", refresh_token: "ref" },
-          },
-          error: null,
-        });
+        },
       },
+    },
+  };
+
+  const anonClient = {
+    auth: {
       signInWithPassword(_creds: unknown) {
         return Promise.resolve({
-          data: { session: opts.signUpSession ?? null },
+          data: { session: opts.signInSession ?? { access_token: "tok", refresh_token: "ref" } },
           error: null,
         });
       },
     },
   };
 
-  return { client, eqCalls };
+  return { adminClient, anonClient, eqCalls };
 }
 
 // ---------------------------------------------------------------------------
-// Handler under test (mirrors index.ts logic exactly)
+// Handler under test — mirrors index.ts exactly
 // ---------------------------------------------------------------------------
 
-async function handler(req: Request, supabase: SupabaseStubClient): Promise<Response> {
+async function handler(
+  req: Request,
+  adminClient: AnyClient,
+  anonClient: AnyClient
+): Promise<Response> {
   const corsHeaders = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -165,7 +164,7 @@ async function handler(req: Request, supabase: SupabaseStubClient): Promise<Resp
 
     const normalizedKeyCode = keyCode.trim().toUpperCase();
 
-    const { data: betaKey, error: keyError } = await supabase
+    const { data: betaKey, error: keyError } = await adminClient
       .from("beta_keys")
       .select("*")
       .eq("key_code", normalizedKeyCode)
@@ -202,25 +201,28 @@ async function handler(req: Request, supabase: SupabaseStubClient): Promise<Resp
       });
     }
 
-    const { data: authData, error: signUpError } = await supabase.auth.signUp({ email, password });
+    const { data: adminUserData, error: createUserError } =
+      await adminClient.auth.admin.createUser({ email, password, email_confirm: true });
 
-    if (signUpError) {
-      return new Response(JSON.stringify({ error: signUpError.message }), {
+    if (createUserError) {
+      return new Response(JSON.stringify({ error: createUserError.message }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    if (!authData.user) {
+    if (!adminUserData.user) {
       return new Response(JSON.stringify({ error: "Failed to create user account" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const userId = authData.user.id;
-    const session = authData.session;
+    const userId = adminUserData.user.id;
 
-    const { data: updatedProfile, error: profileError } = await supabase
+    const { data: signInData } = await anonClient.auth.signInWithPassword({ email, password });
+    const session = signInData?.session ?? null;
+
+    const { data: updatedProfile, error: profileError } = await adminClient
       .from("user_profiles")
       .update({ is_beta_user: true, beta_key_redeemed: normalizedKeyCode })
       .eq("id", userId)
@@ -239,8 +241,7 @@ async function handler(req: Request, supabase: SupabaseStubClient): Promise<Resp
       );
     }
 
-    // Key update: no .select() — only check error, not row count
-    const { error: redeemError } = await supabase
+    const { error: redeemError } = await adminClient
       .from("beta_keys")
       .update({ redeemed_at: new Date().toISOString(), redeemed_by: userId })
       .eq("key_code", normalizedKeyCode);
@@ -256,7 +257,7 @@ async function handler(req: Request, supabase: SupabaseStubClient): Promise<Resp
       JSON.stringify({
         success: true,
         message: "Account created successfully with beta access",
-        user: { id: authData.user.id, email: authData.user.email },
+        user: { id: adminUserData.user.id, email: adminUserData.user.email },
         session,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -267,6 +268,17 @@ async function handler(req: Request, supabase: SupabaseStubClient): Promise<Resp
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
+}
+
+// Helper to call handler with a single stub
+function run(req: Request, opts: StubOptions): Promise<Response> {
+  const { adminClient, anonClient } = makeStub(opts);
+  return handler(req, adminClient, anonClient);
+}
+
+function runWithCalls(req: Request, opts: StubOptions): { res: Promise<Response>; eqCalls: EqCall[] } {
+  const { adminClient, anonClient, eqCalls } = makeStub(opts);
+  return { res: handler(req, adminClient, anonClient), eqCalls };
 }
 
 // ---------------------------------------------------------------------------
@@ -289,14 +301,14 @@ const VALID_SESSION = { access_token: "tok123", refresh_token: "ref123" };
 const VALID_PROFILE_ROWS = [{ id: "user-uuid-001" }];
 const VALID_BODY = { keyCode: "BETA-TEST-KEY1", email: "new@example.com", password: "password123" };
 
-function fullSuccessStub(overrides: StubOptions = {}): Stub {
-  return makeSupabaseStub({
+function successOpts(overrides: StubOptions = {}): StubOptions {
+  return {
     betaKey: VALID_KEY,
-    signUpUser: VALID_USER,
-    signUpSession: VALID_SESSION,
+    createUser: VALID_USER,
+    signInSession: VALID_SESSION,
     profileUpdateRows: VALID_PROFILE_ROWS,
     ...overrides,
-  });
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -304,29 +316,25 @@ function fullSuccessStub(overrides: StubOptions = {}): Stub {
 // ---------------------------------------------------------------------------
 
 Deno.test("OPTIONS preflight returns 200 with CORS headers", async () => {
-  const { client } = makeSupabaseStub({});
-  const res = await handler(optionsRequest(), client);
+  const res = await run(optionsRequest(), {});
   assertEquals(res.status, 200);
   assertEquals(res.headers.get("Access-Control-Allow-Origin"), "*");
 });
 
 Deno.test("Missing keyCode returns 400", async () => {
-  const { client } = makeSupabaseStub({});
-  const res = await handler(makeRequest({ email: "a@b.com", password: "pass" }), client);
+  const res = await run(makeRequest({ email: "a@b.com", password: "pass" }), {});
   assertEquals(res.status, 400);
   assertEquals((await res.json()).error, "Missing required fields");
 });
 
 Deno.test("Missing email returns 400", async () => {
-  const { client } = makeSupabaseStub({});
-  const res = await handler(makeRequest({ keyCode: "BETA-TEST-KEY1", password: "pass" }), client);
+  const res = await run(makeRequest({ keyCode: "BETA-TEST-KEY1", password: "pass" }), {});
   assertEquals(res.status, 400);
   assertEquals((await res.json()).error, "Missing required fields");
 });
 
 Deno.test("Missing password returns 400", async () => {
-  const { client } = makeSupabaseStub({});
-  const res = await handler(makeRequest({ keyCode: "BETA-TEST-KEY1", email: "a@b.com" }), client);
+  const res = await run(makeRequest({ keyCode: "BETA-TEST-KEY1", email: "a@b.com" }), {});
   assertEquals(res.status, 400);
   assertEquals((await res.json()).error, "Missing required fields");
 });
@@ -336,158 +344,137 @@ Deno.test("Missing password returns 400", async () => {
 // ---------------------------------------------------------------------------
 
 Deno.test("Beta key DB error returns 500", async () => {
-  const { client } = makeSupabaseStub({ betaKeyError: { message: "db error" } });
-  const res = await handler(makeRequest(VALID_BODY), client);
+  const res = await run(makeRequest(VALID_BODY), { betaKeyError: { message: "db error" } });
   assertEquals(res.status, 500);
   assertEquals((await res.json()).error, "Failed to validate beta key");
 });
 
 Deno.test("Key not found returns 400 Invalid beta key", async () => {
-  const { client } = makeSupabaseStub({ betaKey: null });
-  const res = await handler(makeRequest(VALID_BODY), client);
+  const res = await run(makeRequest(VALID_BODY), { betaKey: null });
   assertEquals(res.status, 400);
   assertEquals((await res.json()).error, "Invalid beta key");
 });
 
 Deno.test("Inactive key returns 400 deactivated", async () => {
-  const { client } = makeSupabaseStub({ betaKey: { ...VALID_KEY, is_active: false } });
-  const res = await handler(makeRequest(VALID_BODY), client);
+  const res = await run(makeRequest(VALID_BODY), { betaKey: { ...VALID_KEY, is_active: false } });
   assertEquals(res.status, 400);
   assertEquals((await res.json()).error, "This beta key has been deactivated");
 });
 
 Deno.test("Already redeemed key returns 400 already been used", async () => {
-  const { client } = makeSupabaseStub({
+  const res = await run(makeRequest(VALID_BODY), {
     betaKey: { ...VALID_KEY, redeemed_at: "2026-01-01T00:00:00Z" },
   });
-  const res = await handler(makeRequest(VALID_BODY), client);
   assertEquals(res.status, 400);
   assertEquals((await res.json()).error, "This beta key has already been used");
 });
 
 Deno.test("Expired key returns 400 expired", async () => {
-  const { client } = makeSupabaseStub({ betaKey: { ...VALID_KEY, expires_at: PAST } });
-  const res = await handler(makeRequest(VALID_BODY), client);
+  const res = await run(makeRequest(VALID_BODY), { betaKey: { ...VALID_KEY, expires_at: PAST } });
   assertEquals(res.status, 400);
   assertEquals((await res.json()).error, "This beta key has expired");
 });
 
 // ---------------------------------------------------------------------------
-// Tests — auth / profile errors
+// Tests — user creation errors
 // ---------------------------------------------------------------------------
 
-Deno.test("signUp error returns 400 with auth message", async () => {
-  const { client } = makeSupabaseStub({
-    betaKey: VALID_KEY,
-    signUpError: { message: "User already registered" },
-  });
-  const res = await handler(makeRequest(VALID_BODY), client);
+Deno.test("createUser error returns 400 with auth message", async () => {
+  const res = await run(
+    makeRequest(VALID_BODY),
+    successOpts({ createUserError: { message: "User already registered" } })
+  );
   assertEquals(res.status, 400);
   assertEquals((await res.json()).error, "User already registered");
 });
 
+// ---------------------------------------------------------------------------
+// Tests — profile errors
+// ---------------------------------------------------------------------------
+
 Deno.test("Profile update DB error returns 500", async () => {
-  const { client } = makeSupabaseStub({
-    betaKey: VALID_KEY,
-    signUpUser: VALID_USER,
-    signUpSession: VALID_SESSION,
-    profileUpdateError: { message: "update failed" },
-  });
-  const res = await handler(makeRequest(VALID_BODY), client);
+  const res = await run(
+    makeRequest(VALID_BODY),
+    successOpts({ profileUpdateError: { message: "update failed" } })
+  );
   assertEquals(res.status, 500);
   assertEquals((await res.json()).error, "Failed to activate beta access on user profile");
 });
 
 Deno.test("Profile update 0 rows returns 500 profile not found", async () => {
-  const { client } = makeSupabaseStub({
-    betaKey: VALID_KEY,
-    signUpUser: VALID_USER,
-    signUpSession: VALID_SESSION,
-    profileUpdateRows: [],
-  });
-  const res = await handler(makeRequest(VALID_BODY), client);
+  const res = await run(makeRequest(VALID_BODY), successOpts({ profileUpdateRows: [] }));
   assertEquals(res.status, 500);
   assertEquals((await res.json()).error, "User profile not found after account creation");
 });
 
 // ---------------------------------------------------------------------------
 // Tests — key update (THE CRITICAL TESTS)
-// The key update has NO .select() — only redeemError matters.
-// A DB error must be FATAL (return 500), not silently swallowed.
 // ---------------------------------------------------------------------------
 
-Deno.test("Key update DB error returns 500 (fatal — not non-fatal)", async () => {
-  const { client } = fullSuccessStub({ keyUpdateError: { message: "lock timeout" } });
-  const res = await handler(makeRequest(VALID_BODY), client);
+Deno.test("Key update DB error returns 500 — fatal, not non-fatal", async () => {
+  const res = await run(
+    makeRequest(VALID_BODY),
+    successOpts({ keyUpdateError: { message: "lock timeout" } })
+  );
   assertEquals(res.status, 500);
   assertEquals((await res.json()).error, "Failed to redeem beta key");
 });
 
 Deno.test("Key update uses key_code column", async () => {
-  const { client, eqCalls } = fullSuccessStub();
-  await handler(makeRequest(VALID_BODY), client);
-  const keyUpdateCall = eqCalls.find((c) => c.table === "beta_keys" && c.operation === "update");
-  assertExists(keyUpdateCall, "Expected an update .eq() call on beta_keys");
-  assertEquals(keyUpdateCall.column, "key_code", "Key update must filter by key_code, not id");
+  const { res, eqCalls } = runWithCalls(makeRequest(VALID_BODY), successOpts());
+  await res;
+  const call = eqCalls.find((c) => c.table === "beta_keys" && c.operation === "update");
+  assertExists(call, "Expected update .eq() on beta_keys");
+  assertEquals(call.column, "key_code");
 });
 
-Deno.test("Key update .eq() value is not undefined or null", async () => {
-  const { client, eqCalls } = fullSuccessStub();
-  await handler(makeRequest(VALID_BODY), client);
-  const keyUpdateCall = eqCalls.find((c) => c.table === "beta_keys" && c.operation === "update");
-  assertExists(keyUpdateCall);
-  assertExists(keyUpdateCall.value, "Key update .eq() value must not be undefined or null");
-});
-
-Deno.test("Key update .eq() value matches the normalized key code from request", async () => {
-  const { client, eqCalls } = fullSuccessStub();
-  await handler(
+Deno.test("Key update .eq() value matches normalized key from request", async () => {
+  const { res, eqCalls } = runWithCalls(
     makeRequest({ keyCode: "beta-test-key1", email: "new@example.com", password: "password123" }),
-    client
+    successOpts()
   );
-  const keyUpdateCall = eqCalls.find((c) => c.table === "beta_keys" && c.operation === "update");
-  assertExists(keyUpdateCall);
-  assertEquals(keyUpdateCall.value, "BETA-TEST-KEY1", "Key update must use the uppercased key_code");
+  await res;
+  const call = eqCalls.find((c) => c.table === "beta_keys" && c.operation === "update");
+  assertExists(call);
+  assertEquals(call.value, "BETA-TEST-KEY1");
 });
 
-Deno.test("Key update with betaKey.id=undefined still uses key_code correctly", async () => {
-  const keyWithNoId = { ...VALID_KEY, id: undefined };
-  const { client, eqCalls } = fullSuccessStub({ betaKey: keyWithNoId });
-  const res = await handler(makeRequest(VALID_BODY), client);
-  assertEquals(res.status, 200);
-  const keyUpdateCall = eqCalls.find((c) => c.table === "beta_keys" && c.operation === "update");
-  assertExists(keyUpdateCall);
-  assertEquals(keyUpdateCall.column, "key_code");
-  assertEquals(keyUpdateCall.value, "BETA-TEST-KEY1");
-});
-
-Deno.test("Profile update uses id column with a defined user id value", async () => {
-  const { client, eqCalls } = fullSuccessStub();
-  await handler(makeRequest(VALID_BODY), client);
-  const profileUpdateCall = eqCalls.find(
-    (c) => c.table === "user_profiles" && c.operation === "update"
+Deno.test("Key update works even when betaKey.id is undefined", async () => {
+  const { res, eqCalls } = runWithCalls(
+    makeRequest(VALID_BODY),
+    successOpts({ betaKey: { ...VALID_KEY, id: undefined } })
   );
-  assertExists(profileUpdateCall, "Expected an update .eq() call on user_profiles");
-  assertEquals(profileUpdateCall.column, "id");
-  assertEquals(profileUpdateCall.value, VALID_USER.id);
+  assertEquals((await res).status, 200);
+  const call = eqCalls.find((c) => c.table === "beta_keys" && c.operation === "update");
+  assertExists(call);
+  assertEquals(call.column, "key_code");
+  assertEquals(call.value, "BETA-TEST-KEY1");
 });
 
-Deno.test("Beta key SELECT uses key_code column with the normalized key", async () => {
-  const { client, eqCalls } = fullSuccessStub();
-  await handler(makeRequest(VALID_BODY), client);
-  const keySelectCall = eqCalls.find((c) => c.table === "beta_keys" && c.operation === "select");
-  assertExists(keySelectCall, "Expected a select .eq() call on beta_keys");
-  assertEquals(keySelectCall.column, "key_code");
-  assertEquals(keySelectCall.value, "BETA-TEST-KEY1");
+Deno.test("Profile update uses id column with the new user's id", async () => {
+  const { res, eqCalls } = runWithCalls(makeRequest(VALID_BODY), successOpts());
+  await res;
+  const call = eqCalls.find((c) => c.table === "user_profiles" && c.operation === "update");
+  assertExists(call, "Expected update .eq() on user_profiles");
+  assertEquals(call.column, "id");
+  assertEquals(call.value, VALID_USER.id);
+});
+
+Deno.test("Beta key SELECT uses key_code column", async () => {
+  const { res, eqCalls } = runWithCalls(makeRequest(VALID_BODY), successOpts());
+  await res;
+  const call = eqCalls.find((c) => c.table === "beta_keys" && c.operation === "select");
+  assertExists(call, "Expected select .eq() on beta_keys");
+  assertEquals(call.column, "key_code");
+  assertEquals(call.value, "BETA-TEST-KEY1");
 });
 
 // ---------------------------------------------------------------------------
 // Tests — full success path
 // ---------------------------------------------------------------------------
 
-Deno.test("Full success path returns 200 with user, session and message", async () => {
-  const { client } = fullSuccessStub();
-  const res = await handler(makeRequest(VALID_BODY), client);
+Deno.test("Full success returns 200 with user, session, and message", async () => {
+  const res = await run(makeRequest(VALID_BODY), successOpts());
   assertEquals(res.status, 200);
   const body = await res.json();
   assertEquals(body.success, true);
@@ -498,16 +485,12 @@ Deno.test("Full success path returns 200 with user, session and message", async 
 });
 
 Deno.test("keyCode is normalized to uppercase before all queries", async () => {
-  const { client, eqCalls } = fullSuccessStub();
-  await handler(
+  const { res, eqCalls } = runWithCalls(
     makeRequest({ keyCode: "  beta-test-key1  ", email: "a@b.com", password: "pw" }),
-    client
+    successOpts()
   );
+  await res;
   for (const call of eqCalls.filter((c) => c.table === "beta_keys")) {
-    assertEquals(
-      call.value,
-      "BETA-TEST-KEY1",
-      `Expected uppercase normalized key, got: ${call.value}`
-    );
+    assertEquals(call.value, "BETA-TEST-KEY1", `Expected uppercase key, got: ${call.value}`);
   }
 });
