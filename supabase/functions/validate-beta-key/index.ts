@@ -181,16 +181,14 @@ Deno.serve(async (req: Request) => {
     }
 
     // --- Step 5: Mark the beta key as redeemed ---
-    // Match by both id and key_code to eliminate any ambiguity.
-    // If this update fails the user account is still fully functional —
-    // we log the failure for ops cleanup but do NOT return an error to the user.
+    // Match only on key_code (unique, already validated above) to avoid any
+    // ambiguity with betaKey.id type coercion at runtime.
     const { data: redeemedKey, error: redeemError } = await supabase
       .from("beta_keys")
       .update({
         redeemed_at: new Date().toISOString(),
         redeemed_by: userId,
       })
-      .eq("id", betaKey.id)
       .eq("key_code", normalizedKeyCode)
       .select("id");
 
@@ -199,7 +197,7 @@ Deno.serve(async (req: Request) => {
       // Log for manual reconciliation but return success.
       console.error(
         "RECONCILIATION NEEDED: beta key not marked as redeemed.",
-        JSON.stringify({ keyId: betaKey.id, keyCode: normalizedKeyCode, userId, redeemError })
+        JSON.stringify({ keyCode: normalizedKeyCode, userId, redeemError })
       );
     }
 
