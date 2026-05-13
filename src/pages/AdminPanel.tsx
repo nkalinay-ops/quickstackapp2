@@ -1,9 +1,18 @@
 import { useState, useEffect } from 'react';
-import { Shield, Users, Key, ChevronDown, ChevronUp, XCircle, Upload } from 'lucide-react';
+import { Shield, Users, Key, ChevronDown, ChevronUp, XCircle, Upload, Settings, AlertTriangle, Clock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { PromptModal } from '../components/PromptModal';
 import { ConfirmModal } from '../components/ConfirmModal';
+
+type ScanRenewalInterval = 'month' | 'day';
+
+interface AppSetting {
+  key: string;
+  value: string;
+  updated_at: string;
+  updated_by: string | null;
+}
 
 interface UserTermination {
   user_id: string;
@@ -11,6 +20,8 @@ interface UserTermination {
   terminated_by: string;
   reason: string | null;
 }
+
+type UserTier = 'free' | 'paid' | 'admin';
 
 interface UserProfile {
   id: string;
@@ -21,6 +32,8 @@ interface UserProfile {
   admin_granted_at: string | null;
   can_bulk_upload: boolean;
   bulk_upload_granted_at: string | null;
+  user_tier: UserTier;
+  monthly_scan_count: number;
   created_at: string;
   last_sign_in_at: string | null;
   termination: UserTermination | null;
@@ -52,6 +65,9 @@ export function AdminPanel() {
     userId: null,
     reason: '',
   });
+  const [scanRenewalInterval, setScanRenewalInterval] = useState<ScanRenewalInterval>('month');
+  const [scanRenewalSetting, setScanRenewalSetting] = useState<AppSetting | null>(null);
+  const [savingInterval, setSavingInterval] = useState(false);
 
   const loadUsers = async () => {
     try {
@@ -111,10 +127,49 @@ export function AdminPanel() {
     }
   };
 
+  const loadAppSettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('*')
+        .eq('key', 'scan_renewal_interval')
+        .maybeSingle();
+
+      if (error) throw error;
+      if (data) {
+        setScanRenewalSetting(data as AppSetting);
+        setScanRenewalInterval((data.value as ScanRenewalInterval) || 'month');
+      }
+    } catch (err) {
+      console.error('Failed to load app settings:', err);
+    }
+  };
+
+  const handleScanRenewalChange = async (newInterval: ScanRenewalInterval) => {
+    setSavingInterval(true);
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      const { data, error } = await supabase
+        .from('app_settings')
+        .update({ value: newInterval, updated_at: new Date().toISOString(), updated_by: currentUser?.id ?? null })
+        .eq('key', 'scan_renewal_interval')
+        .select()
+        .maybeSingle();
+
+      if (error) throw error;
+      setScanRenewalInterval(newInterval);
+      if (data) setScanRenewalSetting(data as AppSetting);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update scan renewal interval');
+    } finally {
+      setSavingInterval(false);
+    }
+  };
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      await Promise.all([loadUsers(), loadBetaKeys()]);
+      await Promise.all([loadUsers(), loadBetaKeys(), loadAppSettings()]);
       setLoading(false);
     };
     loadData();
@@ -287,13 +342,42 @@ export function AdminPanel() {
     }
   };
 
+  const handleSetTier = async (userId: string, tier: 'free' | 'paid') => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-admin-users`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({ action: 'set_tier', userId, tier }),
+        }
+      );
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to update tier');
+      }
+
+      await loadUsers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update tier');
+    }
+  };
+
   const stats = {
     totalUsers: users.length,
     betaUsers: users.filter(u => u.is_beta_user).length,
     adminUsers: users.filter(u => u.is_admin).length,
     activeBetaKeys: betaKeys.filter(k => k.is_active && !k.redeemed_at).length,
     terminatedUsers: users.filter(u => u.termination).length,
-    bulkUploadUsers: users.filter(u => u.can_bulk_upload).length,
+    paidUsers: users.filter(u => u.user_tier === 'paid').length,
   };
 
   if (loading) {
@@ -322,6 +406,68 @@ export function AdminPanel() {
           </button>
         </div>
       )}
+
+      {/* System Settings */}
+      <div className="bg-gray-800 rounded-lg border border-gray-700 p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Settings className="w-5 h-5 text-gray-400" />
+          <h2 className="text-lg font-semibold text-white">System Settings</h2>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+          <div className="flex-1">
+            <p className="text-sm font-medium text-gray-300 mb-1 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-gray-400" />
+              Scan Renewal Interval
+            </p>
+            <p className="text-xs text-gray-500">
+              Controls when free-user scan counts reset. Use Daily to test renewal logic.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleScanRenewalChange('month')}
+              disabled={savingInterval}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
+                scanRenewalInterval === 'month'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600'
+              }`}
+            >
+              Monthly
+            </button>
+            <button
+              onClick={() => handleScanRenewalChange('day')}
+              disabled={savingInterval}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
+                scanRenewalInterval === 'day'
+                  ? 'bg-amber-600 text-white'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600 border border-gray-600'
+              }`}
+            >
+              Daily
+            </button>
+          </div>
+        </div>
+
+        {scanRenewalInterval === 'day' && (
+          <div className="mt-4 flex items-start gap-2 bg-amber-950/60 border border-amber-700/50 rounded-lg px-4 py-3">
+            <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-amber-300 text-sm font-medium">Testing mode active</p>
+              <p className="text-amber-400/80 text-xs mt-0.5">
+                Free-user scan counts reset daily at midnight. Switch back to Monthly before going to production.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {scanRenewalSetting?.updated_at && (
+          <p className="text-xs text-gray-600 mt-3">
+            Last changed {new Date(scanRenewalSetting.updated_at).toLocaleString()}
+          </p>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
@@ -360,6 +506,16 @@ export function AdminPanel() {
             <div>
               <p className="text-gray-400 text-sm">Active Keys</p>
               <p className="text-2xl font-bold text-white">{stats.activeBetaKeys}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+          <div className="flex items-center gap-3">
+            <Upload className="w-8 h-8 text-blue-400" />
+            <div>
+              <p className="text-gray-400 text-sm">Paid Users</p>
+              <p className="text-2xl font-bold text-white">{stats.paidUsers}</p>
             </div>
           </div>
         </div>
@@ -416,7 +572,7 @@ export function AdminPanel() {
                             Joined {new Date(user.created_at).toLocaleDateString()}
                           </p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                           {user.termination && (
                             <span className="px-3 py-1 bg-red-500/10 text-red-400 rounded-full text-sm border border-red-500/20">
                               Terminated
@@ -425,6 +581,16 @@ export function AdminPanel() {
                           {user.is_admin && (
                             <span className="px-3 py-1 bg-orange-500/10 text-orange-400 rounded-full text-sm border border-orange-500/20">
                               Admin
+                            </span>
+                          )}
+                          {!user.is_admin && user.user_tier === 'paid' && (
+                            <span className="px-3 py-1 bg-blue-500/10 text-blue-400 rounded-full text-sm border border-blue-500/20">
+                              Paid
+                            </span>
+                          )}
+                          {!user.is_admin && user.user_tier === 'free' && (
+                            <span className="px-3 py-1 bg-gray-500/10 text-gray-400 rounded-full text-sm border border-gray-500/20">
+                              Free
                             </span>
                           )}
                           {user.is_beta_user && (
@@ -490,29 +656,63 @@ export function AdminPanel() {
                       </div>
 
                       {!user.termination && (
-                        <div className="flex gap-3">
-                          {!user.is_admin ? (
-                            <button
-                              onClick={() => handlePromoteAdmin(user.id)}
-                              className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors"
-                            >
-                              Promote to Admin
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleRevokeAdmin(user.id)}
-                              className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
-                            >
-                              Revoke Admin
-                            </button>
+                        <div className="space-y-3">
+                          {!user.is_admin && (
+                            <div className="flex items-center gap-3">
+                              <span className="text-gray-400 text-sm">Plan:</span>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleSetTier(user.id, 'free')}
+                                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                                    user.user_tier === 'free'
+                                      ? 'bg-gray-600 text-white'
+                                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700'
+                                  }`}
+                                >
+                                  Free
+                                </button>
+                                <button
+                                  onClick={() => handleSetTier(user.id, 'paid')}
+                                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                                    user.user_tier === 'paid'
+                                      ? 'bg-blue-600 text-white'
+                                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700'
+                                  }`}
+                                >
+                                  Paid
+                                </button>
+                              </div>
+                              <span className="text-gray-600 text-xs">
+                                {user.user_tier === 'free'
+                                  ? `${user.monthly_scan_count ?? 0}/20 scans this month`
+                                  : 'Unlimited scans + bulk upload'}
+                              </span>
+                            </div>
                           )}
-                          <button
-                            onClick={() => handleTerminateClick(user.id)}
-                            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors flex items-center gap-2"
-                          >
-                            <XCircle className="w-4 h-4" />
-                            Terminate Access
-                          </button>
+                          <div className="flex gap-3">
+                            {!user.is_admin ? (
+                              <button
+                                onClick={() => handlePromoteAdmin(user.id)}
+                                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors"
+                              >
+                                Promote to Admin
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleRevokeAdmin(user.id)}
+                                className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
+                              >
+                                Revoke Admin
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleTerminateClick(user.id)}
+                              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors flex items-center gap-2"
+                            >
+                              <XCircle className="w-4 h-4" />
+                              Terminate Access
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>

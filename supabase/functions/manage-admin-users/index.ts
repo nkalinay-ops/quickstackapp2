@@ -9,9 +9,10 @@ const corsHeaders = {
 };
 
 interface AdminActionRequest {
-  action: "list_users" | "promote_admin" | "revoke_admin" | "terminate_user";
+  action: "list_users" | "promote_admin" | "revoke_admin" | "terminate_user" | "set_tier";
   userId?: string;
   reason?: string;
+  tier?: "free" | "paid";
 }
 
 Deno.serve(async (req: Request) => {
@@ -81,6 +82,9 @@ Deno.serve(async (req: Request) => {
           can_bulk_upload,
           bulk_upload_granted_at,
           bulk_upload_granted_by,
+          user_tier,
+          monthly_scan_count,
+          scan_month_reset_at,
           created_at,
           updated_at
         `)
@@ -122,6 +126,42 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (body.action === "set_tier" && body.userId) {
+      if (!body.tier || !["free", "paid"].includes(body.tier)) {
+        return new Response(
+          JSON.stringify({ error: "tier must be 'free' or 'paid'" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Also sync the legacy can_bulk_upload flag
+      const tierUpdate = body.tier === "paid"
+        ? {
+            user_tier: "paid",
+            can_bulk_upload: true,
+            bulk_upload_granted_at: new Date().toISOString(),
+            bulk_upload_granted_by: user.id,
+          }
+        : {
+            user_tier: "free",
+            can_bulk_upload: false,
+            bulk_upload_granted_at: null,
+            bulk_upload_granted_by: null,
+          };
+
+      const { error: updateError } = await serviceClient
+        .from("user_profiles")
+        .update(tierUpdate)
+        .eq("id", body.userId);
+
+      if (updateError) throw updateError;
+
+      return new Response(
+        JSON.stringify({ success: true, message: `User tier set to ${body.tier}` }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     if (body.action === "promote_admin" && body.userId) {
       const { error: updateError } = await serviceClient
         .from("user_profiles")
@@ -129,6 +169,7 @@ Deno.serve(async (req: Request) => {
           is_admin: true,
           admin_granted_at: new Date().toISOString(),
           admin_granted_by: user.id,
+          user_tier: "admin",
         })
         .eq("id", body.userId);
 
@@ -154,6 +195,7 @@ Deno.serve(async (req: Request) => {
           is_admin: false,
           admin_granted_at: null,
           admin_granted_by: null,
+          user_tier: "free",
         })
         .eq("id", body.userId);
 

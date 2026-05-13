@@ -2,16 +2,19 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
+export type UserTier = 'free' | 'paid' | 'admin';
+
 type AuthContextType = {
   user: User | null;
   loading: boolean;
   isAdmin: boolean;
+  userTier: UserTier;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshAdminStatus: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
-  updatePassword: (newPassword: string) => Promise<void>;
+  updatePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   deleteAccount: () => Promise<void>;
 };
 
@@ -21,6 +24,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [userTier, setUserTier] = useState<UserTier>('free');
 
   const checkTerminationStatus = async (userId: string): Promise<boolean> => {
     const { data } = await supabase
@@ -35,14 +39,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchAdminStatus = async (userId: string) => {
     const { data, error } = await supabase
       .from('user_profiles')
-      .select('is_admin')
+      .select('is_admin, user_tier')
       .eq('id', userId)
       .maybeSingle();
 
     if (!error && data) {
       setIsAdmin(data.is_admin || false);
+      setUserTier((data.user_tier as UserTier) || 'free');
     } else {
       setIsAdmin(false);
+      setUserTier('free');
     }
   };
 
@@ -94,6 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } else {
             setUser(null);
             setIsAdmin(false);
+            setUserTier('free');
           }
           setLoading(false);
         }
@@ -157,7 +164,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   };
 
-  const updatePassword = async (newPassword: string) => {
+  const updatePassword = async (currentPassword: string, newPassword: string) => {
+    if (!user?.email) throw new Error('No authenticated user');
+    // Re-authenticate with the current password to verify it before allowing the change.
+    const { error: reAuthError } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: currentPassword,
+    });
+    if (reAuthError) throw new Error('Current password is incorrect');
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) throw error;
   };
@@ -180,7 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, isAdmin, signIn, signUp, signOut, refreshAdminStatus, resetPassword, updatePassword, deleteAccount }}>
+    <AuthContext.Provider value={{ user, loading, isAdmin, userTier, signIn, signUp, signOut, refreshAdminStatus, resetPassword, updatePassword, deleteAccount }}>
       {children}
     </AuthContext.Provider>
   );
