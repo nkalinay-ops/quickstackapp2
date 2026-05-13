@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,6 +17,8 @@ interface ComicData {
   cover_variant: number | null;
 }
 
+const FREE_TIER_SCAN_LIMIT = 20;
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -25,15 +28,65 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    // Auth check
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: "Missing authorization header" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const { data: { user }, error: authError } = await userClient.auth.getUser();
+
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Tier and scan limit check
+    const { data: scanInfo, error: scanInfoError } = await userClient
+      .rpc("get_user_scan_info", { p_user_id: user.id });
+
+    if (scanInfoError || !scanInfo) {
+      return new Response(
+        JSON.stringify({ error: "Could not verify user access" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const tier: string = scanInfo.tier ?? "free";
+    const monthlyCount: number = scanInfo.monthly_scan_count ?? 0;
+
+    if (tier === "free" && monthlyCount >= FREE_TIER_SCAN_LIMIT) {
+      return new Response(
+        JSON.stringify({
+          error: "Monthly scan limit reached. Upgrade to continue scanning.",
+          limitReached: true,
+          tier,
+          monthly_scan_count: monthlyCount,
+          scan_limit: FREE_TIER_SCAN_LIMIT,
+        }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const { imageData } = await req.json();
 
     if (!imageData) {
       return new Response(
         JSON.stringify({ error: "No image data provided" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -42,10 +95,7 @@ Deno.serve(async (req: Request) => {
     if (!openaiApiKey) {
       return new Response(
         JSON.stringify({ error: "OpenAI API key not configured" }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -140,10 +190,7 @@ ALWAYS return valid JSON, even if the image is unclear.`
           detail: `OpenAI API returned ${response.status}`,
           openaiError: errorText.substring(0, 200)
         }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -161,10 +208,7 @@ ALWAYS return valid JSON, even if the image is unclear.`
           error: "Unable to process image",
           detail: "The image could not be analyzed. Please ensure it's a clear photo of a comic book cover."
         }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -176,10 +220,7 @@ ALWAYS return valid JSON, even if the image is unclear.`
           detail: "OpenAI returned an empty response",
           debugInfo: JSON.stringify(data).substring(0, 200)
         }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -203,10 +244,7 @@ ALWAYS return valid JSON, even if the image is unclear.`
             error: "Unable to read comic cover. Please ensure the image is clear, well-lit, and the text is visible.",
             detail: "The AI could not extract text from this image. Try taking another photo with better lighting or angle."
           }),
-          {
-            status: 400,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
@@ -215,12 +253,14 @@ ALWAYS return valid JSON, even if the image is unclear.`
           error: "Could not understand the response from the AI. Please try again.",
           detail: content.substring(0, 200)
         }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // Increment scan count after successful scan
+    await userClient.rpc("increment_scan_count", { p_user_id: user.id });
+
+    const newCount = monthlyCount + 1;
 
     return new Response(
       JSON.stringify({
@@ -234,20 +274,20 @@ ALWAYS return valid JSON, even if the image is unclear.`
           total_issues: comicData.total_issues || null,
           cover_variant: comicData.cover_variant || null,
         },
+        scan_info: {
+          tier,
+          monthly_scan_count: newCount,
+          scan_limit: tier === "free" ? FREE_TIER_SCAN_LIMIT : null,
+          scans_remaining: tier === "free" ? FREE_TIER_SCAN_LIMIT - newCount : null,
+        },
       }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
     console.error("Error processing request:", error);
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });

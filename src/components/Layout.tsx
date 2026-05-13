@@ -1,7 +1,6 @@
-import { ReactNode, useState, useEffect } from 'react';
+import { ReactNode } from 'react';
 import { Home, Library, Plus, Heart, Settings, Shield, Upload } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../lib/supabase';
 
 type LayoutProps = {
   children: ReactNode;
@@ -10,26 +9,8 @@ type LayoutProps = {
 };
 
 export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
-  const { isAdmin, user } = useAuth();
-  const [canBulkUpload, setCanBulkUpload] = useState(false);
-
-  useEffect(() => {
-    const checkBulkUploadPermission = async () => {
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from('user_profiles')
-        .select('can_bulk_upload')
-        .eq('id', user.id)
-        .single();
-
-      if (!error && data) {
-        setCanBulkUpload(data.can_bulk_upload);
-      }
-    };
-
-    checkBulkUploadPermission();
-  }, [user]);
+  const { isAdmin, userTier } = useAuth();
+  const canBulkUpload = userTier === 'paid' || userTier === 'admin';
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">

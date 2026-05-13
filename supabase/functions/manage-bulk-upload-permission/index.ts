@@ -74,16 +74,20 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Sync both the legacy can_bulk_upload flag and the new user_tier column.
+    // Granting bulk upload promotes to 'paid' tier; revoking drops back to 'free'.
     const updateData = grant
       ? {
           can_bulk_upload: true,
           bulk_upload_granted_at: new Date().toISOString(),
           bulk_upload_granted_by: user.id,
+          user_tier: "paid",
         }
       : {
           can_bulk_upload: false,
           bulk_upload_granted_at: null,
           bulk_upload_granted_by: null,
+          user_tier: "free",
         };
 
     const { error: updateError } = await serviceClient
@@ -105,8 +109,8 @@ Deno.serve(async (req: Request) => {
       JSON.stringify({
         success: true,
         message: grant
-          ? "Bulk upload permission granted"
-          : "Bulk upload permission revoked",
+          ? "User upgraded to paid tier with bulk upload access"
+          : "User downgraded to free tier, bulk upload access revoked",
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

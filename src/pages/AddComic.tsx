@@ -1,14 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase, Comic } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { CheckCircle2, Plus, Camera, Scan, X, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, Plus, Camera, Scan, X, AlertTriangle, Zap } from 'lucide-react';
 import { CameraCapture } from '../components/CameraCapture';
 import { optimizeImageForOCR } from '../utils/imageOptimizer';
 import DuplicateModal from '../components/DuplicateModal';
 import { AlertModal } from '../components/AlertModal';
 
+const FREE_SCAN_LIMIT = 20;
+
 export function AddComic() {
-  const { user } = useAuth();
+  const { user, userTier } = useAuth();
   const [series, setSeries] = useState('');
   const [story, setStory] = useState('');
   const [issueNumber, setIssueNumber] = useState('');
@@ -31,6 +33,20 @@ export function AddComic() {
     isOpen: false,
     message: '',
   });
+  const [monthlyScanCount, setMonthlyScanCount] = useState<number | null>(null);
+  const [scanRenewalInterval, setScanRenewalInterval] = useState<'month' | 'day'>('month');
+
+  useEffect(() => {
+    if (!user || userTier !== 'free') return;
+    supabase
+      .rpc('get_user_scan_info', { p_user_id: user.id })
+      .then(({ data }) => {
+        if (data) {
+          setMonthlyScanCount(data.monthly_scan_count ?? 0);
+          setScanRenewalInterval(data.renewal_interval === 'day' ? 'day' : 'month');
+        }
+      });
+  }, [user, userTier]);
 
   const checkForDuplicates = async (comicSeries: string, comicIssueNumber: string, comicStory = ''): Promise<Comic | null> => {
     if (!user || !comicSeries.trim() || !comicIssueNumber.trim()) return null;
@@ -67,9 +83,10 @@ export function AddComic() {
 
       console.log(`Image optimization: ${optimized.originalSize} bytes → ${optimized.optimizedSize} bytes (${optimized.savingsPercent}% reduction)`);
 
+      const { data: { session } } = await supabase.auth.getSession();
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scan-comic`;
       const headers = {
-        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        'Authorization': `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY}`,
         'Content-Type': 'application/json',
       };
 
@@ -82,18 +99,34 @@ export function AddComic() {
       const result = await response.json();
 
       if (!response.ok) {
-        const errorMessage = result.detail || result.error || 'Failed to scan comic';
         console.error('Scan error:', result);
-        setAlertModal({
-          isOpen: true,
-          title: 'Scanning Failed',
-          message: `${errorMessage}\n\nPlease try again with better lighting or enter details manually.`,
-          type: 'error',
-        });
+        if (response.status === 429 && result.limitReached) {
+          setMonthlyScanCount(FREE_SCAN_LIMIT);
+          const resetMsg = scanRenewalInterval === 'day'
+            ? 'Your limit resets tomorrow at midnight.'
+            : 'Your limit resets on the 1st of next month.';
+          setAlertModal({
+            isOpen: true,
+            title: 'Scan Limit Reached',
+            message: `You have used all ${FREE_SCAN_LIMIT} scans for this period. ${resetMsg} Please enter comic details manually, or upgrade to a paid plan for unlimited scans.`,
+            type: 'info',
+          });
+        } else {
+          const errorMessage = result.detail || result.error || 'Failed to scan comic';
+          setAlertModal({
+            isOpen: true,
+            title: 'Scanning Failed',
+            message: `${errorMessage}\n\nPlease try again with better lighting or enter details manually.`,
+            type: 'error',
+          });
+        }
         return;
       }
 
       if (result.success && result.data) {
+        if (result.scan_info && userTier === 'free') {
+          setMonthlyScanCount(result.scan_info.monthly_scan_count ?? null);
+        }
         const scannedSeries = result.data.series || '';
         const scannedIssue = result.data.issue_number || '';
 
@@ -507,10 +540,31 @@ export function AddComic() {
           </div>
         ) : (
           <>
+            {userTier === 'free' && monthlyScanCount !== null && (
+              <div className={`mb-3 flex items-center justify-between px-4 py-2 rounded-lg border text-sm ${
+                monthlyScanCount >= FREE_SCAN_LIMIT
+                  ? 'bg-red-950 border-red-800 text-red-400'
+                  : monthlyScanCount >= FREE_SCAN_LIMIT - 3
+                  ? 'bg-amber-950 border-amber-800 text-amber-400'
+                  : 'bg-gray-900 border-gray-800 text-gray-400'
+              }`}>
+                <span>
+                  {monthlyScanCount >= FREE_SCAN_LIMIT
+                    ? `${scanRenewalInterval === 'day' ? 'Daily' : 'Monthly'} scan limit reached`
+                    : `${monthlyScanCount} of ${FREE_SCAN_LIMIT} scans used this ${scanRenewalInterval === 'day' ? 'day' : 'month'}`}
+                </span>
+                {monthlyScanCount >= FREE_SCAN_LIMIT && (
+                  <span className="flex items-center gap-1 text-xs font-medium text-amber-400">
+                    <Zap size={12} />
+                    Upgrade for unlimited
+                  </span>
+                )}
+              </div>
+            )}
             <button
               type="button"
               onClick={() => setShowCamera(true)}
-              disabled={scanning}
+              disabled={scanning || (userTier === 'free' && monthlyScanCount !== null && monthlyScanCount >= FREE_SCAN_LIMIT)}
               className="w-full py-4 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {scanning ? (

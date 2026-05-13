@@ -7,9 +7,11 @@ interface PasswordRequirement {
   label: string;
 }
 
+export const PASSWORD_MIN_LENGTH = 12;
+
 export function PasswordStrength({ password }: PasswordStrengthProps) {
   const requirements: PasswordRequirement[] = [
-    { met: password.length >= 8, label: 'At least 8 characters' },
+    { met: password.length >= PASSWORD_MIN_LENGTH, label: `At least ${PASSWORD_MIN_LENGTH} characters` },
     { met: /[0-9]/.test(password), label: 'Contains at least 1 number' },
   ];
 
@@ -68,8 +70,8 @@ export function PasswordStrength({ password }: PasswordStrengthProps) {
 }
 
 export function validatePassword(password: string): { isValid: boolean; error?: string } {
-  if (password.length < 8) {
-    return { isValid: false, error: 'Password must be at least 8 characters long' };
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    return { isValid: false, error: `Password must be at least ${PASSWORD_MIN_LENGTH} characters long` };
   }
   if (!/[0-9]/.test(password)) {
     return { isValid: false, error: 'Password must contain at least one number' };
