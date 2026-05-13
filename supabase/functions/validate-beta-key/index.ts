@@ -29,7 +29,9 @@ Deno.serve(async (req: Request) => {
       throw new Error("Missing Supabase environment variables");
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
 
     const { keyCode, email, password }: ValidateBetaKeyRequest = await req.json();
 
@@ -132,8 +134,6 @@ Deno.serve(async (req: Request) => {
 
     const userId = authData.user.id;
 
-    // If signUp didn't return a session (can happen with rate limiting or email flow),
-    // explicitly sign in to get a valid session
     let session = authData.session;
     if (!session) {
       const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
@@ -145,32 +145,69 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // Upsert so the row is created even if the trigger hasn't fired yet.
-    // The trigger will either have already created the row (update path) or
-    // this will create it directly (insert path). Either way beta fields are set.
-    const { error: profileError } = await supabase
+    // The handle_new_user trigger fires synchronously on auth.users INSERT,
+    // so the profile row already exists by the time signUp returns.
+    // Use update (not upsert) to set beta fields on the existing row.
+    const { data: updatedProfile, error: profileError } = await supabase
       .from("user_profiles")
-      .upsert({
-        id: userId,
+      .update({
         is_beta_user: true,
         beta_key_redeemed: normalizedKeyCode,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "id" });
+      })
+      .eq("id", userId)
+      .select("id");
 
     if (profileError) {
       console.error("Error updating user profile:", profileError);
+      return new Response(
+        JSON.stringify({ error: "Failed to activate beta access on user profile" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
-    const { error: redeemError } = await supabase
+    if (!updatedProfile || updatedProfile.length === 0) {
+      console.error("Profile update matched 0 rows for userId:", userId);
+      return new Response(
+        JSON.stringify({ error: "User profile not found after account creation" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    const { data: redeemedKey, error: redeemError } = await supabase
       .from("beta_keys")
       .update({
         redeemed_at: new Date().toISOString(),
         redeemed_by: userId,
       })
-      .eq("id", betaKey.id);
+      .eq("id", betaKey.id)
+      .select("id");
 
     if (redeemError) {
       console.error("Error redeeming beta key:", redeemError);
+      return new Response(
+        JSON.stringify({ error: "Failed to mark beta key as redeemed" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    if (!redeemedKey || redeemedKey.length === 0) {
+      console.error("Beta key update matched 0 rows for keyId:", betaKey.id);
+      return new Response(
+        JSON.stringify({ error: "Failed to mark beta key as redeemed" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
     }
 
     return new Response(
