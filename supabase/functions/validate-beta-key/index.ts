@@ -47,6 +47,7 @@ Deno.serve(async (req: Request) => {
 
     const normalizedKeyCode = keyCode.trim().toUpperCase();
 
+    // --- Step 1: Validate the beta key ---
     const { data: betaKey, error: keyError } = await supabase
       .from("beta_keys")
       .select("*")
@@ -94,9 +95,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const expiresAt = new Date(betaKey.expires_at);
-    const now = new Date();
-    if (now > expiresAt) {
+    if (new Date() > new Date(betaKey.expires_at)) {
       return new Response(
         JSON.stringify({ error: "This beta key has expired" }),
         {
@@ -106,6 +105,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // --- Step 2: Create the user account ---
     const { data: authData, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
@@ -134,6 +134,7 @@ Deno.serve(async (req: Request) => {
 
     const userId = authData.user.id;
 
+    // --- Step 3: Get session ---
     let session = authData.session;
     if (!session) {
       const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
@@ -145,9 +146,9 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // --- Step 4: Activate beta access on the user profile ---
     // The handle_new_user trigger fires synchronously on auth.users INSERT,
     // so the profile row already exists by the time signUp returns.
-    // Use update (not upsert) to set beta fields on the existing row.
     const { data: updatedProfile, error: profileError } = await supabase
       .from("user_profiles")
       .update({
@@ -179,6 +180,10 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // --- Step 5: Mark the beta key as redeemed ---
+    // Match by both id and key_code to eliminate any ambiguity.
+    // If this update fails the user account is still fully functional —
+    // we log the failure for ops cleanup but do NOT return an error to the user.
     const { data: redeemedKey, error: redeemError } = await supabase
       .from("beta_keys")
       .update({
@@ -186,27 +191,15 @@ Deno.serve(async (req: Request) => {
         redeemed_by: userId,
       })
       .eq("id", betaKey.id)
+      .eq("key_code", normalizedKeyCode)
       .select("id");
 
-    if (redeemError) {
-      console.error("Error redeeming beta key:", redeemError);
-      return new Response(
-        JSON.stringify({ error: "Failed to mark beta key as redeemed" }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    if (!redeemedKey || redeemedKey.length === 0) {
-      console.error("Beta key update matched 0 rows for keyId:", betaKey.id);
-      return new Response(
-        JSON.stringify({ error: "Failed to mark beta key as redeemed" }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+    if (redeemError || !redeemedKey || redeemedKey.length === 0) {
+      // Non-fatal: the user's account and beta profile are fully set up.
+      // Log for manual reconciliation but return success.
+      console.error(
+        "RECONCILIATION NEEDED: beta key not marked as redeemed.",
+        JSON.stringify({ keyId: betaKey.id, keyCode: normalizedKeyCode, userId, redeemError })
       );
     }
 
