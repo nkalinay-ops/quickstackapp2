@@ -181,23 +181,29 @@ Deno.serve(async (req: Request) => {
     }
 
     // --- Step 5: Mark the beta key as redeemed ---
-    // Match only on key_code (unique, already validated above) to avoid any
-    // ambiguity with betaKey.id type coercion at runtime.
-    const { data: redeemedKey, error: redeemError } = await supabase
+    // No .select() appended — PostgREST returns 204 No Content on success.
+    // Chaining .select() caused a silent failure because supabase-js requires
+    // a SELECT RLS policy to return RETURNING rows, even when the UPDATE itself
+    // succeeds. We only check redeemError; absence of error means success.
+    const { error: redeemError } = await supabase
       .from("beta_keys")
       .update({
         redeemed_at: new Date().toISOString(),
         redeemed_by: userId,
       })
-      .eq("key_code", normalizedKeyCode)
-      .select("id");
+      .eq("key_code", normalizedKeyCode);
 
-    if (redeemError || !redeemedKey || redeemedKey.length === 0) {
-      // Non-fatal: the user's account and beta profile are fully set up.
-      // Log for manual reconciliation but return success.
+    if (redeemError) {
       console.error(
-        "RECONCILIATION NEEDED: beta key not marked as redeemed.",
+        "Error marking beta key as redeemed:",
         JSON.stringify({ keyCode: normalizedKeyCode, userId, redeemError })
+      );
+      return new Response(
+        JSON.stringify({ error: "Failed to redeem beta key" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
       );
     }
 

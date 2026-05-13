@@ -2,11 +2,11 @@
  * Unit tests for validate-beta-key edge function.
  *
  * Run with:
- *   /home/appuser/.deno/bin/deno test --allow-env --allow-net index.test.ts
+ *   ~/.deno/bin/deno test --allow-env --allow-net index.test.ts
  *
  * Stubs capture actual argument values passed to every .eq() call so that
- * bugs like "betaKey.id is undefined" or "wrong column used for update"
- * are caught at the query-construction level, not just in control flow.
+ * bugs like "wrong column used for update" are caught at query-construction
+ * level. The key update intentionally has NO .select() — we only check error.
  */
 
 import { assertEquals, assertExists } from "jsr:@std/assert@0.226";
@@ -29,10 +29,6 @@ function optionsRequest(): Request {
 
 // ---------------------------------------------------------------------------
 // Argument-capturing stub
-//
-// Every call to .eq(col, val) is recorded in `calls` so tests can assert:
-//   - which column was used
-//   - that the value was not undefined/null
 // ---------------------------------------------------------------------------
 
 interface EqCall {
@@ -50,7 +46,6 @@ interface StubOptions {
   signUpSession?: Record<string, unknown> | null;
   profileUpdateRows?: { id: string }[];
   profileUpdateError?: { message: string } | null;
-  keyUpdateRows?: { id: string }[];
   keyUpdateError?: { message: string } | null;
 }
 
@@ -94,21 +89,20 @@ function makeSupabaseStub(opts: StubOptions): Stub {
           return {
             eq(col: string, val: unknown) {
               recordEq(table, "update", col, val);
+              // Key update has no .select() — returns { error } directly.
+              // Profile update chains .select("id") — returns { data, error }.
+              if (table === "beta_keys") {
+                return Promise.resolve({
+                  error: opts.keyUpdateError ?? null,
+                });
+              }
+              // user_profiles update chains .select("id")
               return {
                 select(_cols: string) {
-                  if (table === "user_profiles") {
-                    return Promise.resolve({
-                      data: opts.profileUpdateRows ?? [],
-                      error: opts.profileUpdateError ?? null,
-                    });
-                  }
-                  if (table === "beta_keys") {
-                    return Promise.resolve({
-                      data: opts.keyUpdateRows ?? [],
-                      error: opts.keyUpdateError ?? null,
-                    });
-                  }
-                  return Promise.resolve({ data: [], error: null });
+                  return Promise.resolve({
+                    data: opts.profileUpdateRows ?? [],
+                    error: opts.profileUpdateError ?? null,
+                  });
                 },
               };
             },
@@ -147,7 +141,6 @@ function makeSupabaseStub(opts: StubOptions): Stub {
 // ---------------------------------------------------------------------------
 // Handler under test (mirrors index.ts logic exactly)
 // ---------------------------------------------------------------------------
-
 
 async function handler(req: Request, supabase: SupabaseStubClient): Promise<Response> {
   const corsHeaders = {
@@ -246,19 +239,17 @@ async function handler(req: Request, supabase: SupabaseStubClient): Promise<Resp
       );
     }
 
-    // Fixed: match only on key_code — no betaKey.id involved
-    const { data: redeemedKey, error: redeemError } = await supabase
+    // Key update: no .select() — only check error, not row count
+    const { error: redeemError } = await supabase
       .from("beta_keys")
       .update({ redeemed_at: new Date().toISOString(), redeemed_by: userId })
-      .eq("key_code", normalizedKeyCode)
-      .select("id");
+      .eq("key_code", normalizedKeyCode);
 
-    if (redeemError || !redeemedKey || redeemedKey.length === 0) {
-      console.error("RECONCILIATION NEEDED", {
-        keyCode: normalizedKeyCode,
-        userId,
-        redeemError,
-      });
+    if (redeemError) {
+      return new Response(
+        JSON.stringify({ error: "Failed to redeem beta key" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     return new Response(
@@ -296,12 +287,7 @@ const VALID_KEY = {
 const VALID_USER = { id: "user-uuid-001", email: "new@example.com" };
 const VALID_SESSION = { access_token: "tok123", refresh_token: "ref123" };
 const VALID_PROFILE_ROWS = [{ id: "user-uuid-001" }];
-const VALID_KEY_ROWS = [{ id: "key-uuid-001" }];
 const VALID_BODY = { keyCode: "BETA-TEST-KEY1", email: "new@example.com", password: "password123" };
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function fullSuccessStub(overrides: StubOptions = {}): Stub {
   return makeSupabaseStub({
@@ -309,7 +295,6 @@ function fullSuccessStub(overrides: StubOptions = {}): Stub {
     signUpUser: VALID_USER,
     signUpSession: VALID_SESSION,
     profileUpdateRows: VALID_PROFILE_ROWS,
-    keyUpdateRows: VALID_KEY_ROWS,
     ...overrides,
   });
 }
@@ -426,18 +411,22 @@ Deno.test("Profile update 0 rows returns 500 profile not found", async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tests — key update argument correctness (THE CRITICAL NEW TESTS)
-// These tests capture the actual .eq() arguments and assert correctness.
-// The old tests only checked return values, not query construction.
+// Tests — key update (THE CRITICAL TESTS)
+// The key update has NO .select() — only redeemError matters.
+// A DB error must be FATAL (return 500), not silently swallowed.
 // ---------------------------------------------------------------------------
 
-Deno.test("Key update uses key_code column, not id", async () => {
+Deno.test("Key update DB error returns 500 (fatal — not non-fatal)", async () => {
+  const { client } = fullSuccessStub({ keyUpdateError: { message: "lock timeout" } });
+  const res = await handler(makeRequest(VALID_BODY), client);
+  assertEquals(res.status, 500);
+  assertEquals((await res.json()).error, "Failed to redeem beta key");
+});
+
+Deno.test("Key update uses key_code column", async () => {
   const { client, eqCalls } = fullSuccessStub();
   await handler(makeRequest(VALID_BODY), client);
-
-  const keyUpdateCall = eqCalls.find(
-    (c) => c.table === "beta_keys" && c.operation === "update"
-  );
+  const keyUpdateCall = eqCalls.find((c) => c.table === "beta_keys" && c.operation === "update");
   assertExists(keyUpdateCall, "Expected an update .eq() call on beta_keys");
   assertEquals(keyUpdateCall.column, "key_code", "Key update must filter by key_code, not id");
 });
@@ -445,45 +434,28 @@ Deno.test("Key update uses key_code column, not id", async () => {
 Deno.test("Key update .eq() value is not undefined or null", async () => {
   const { client, eqCalls } = fullSuccessStub();
   await handler(makeRequest(VALID_BODY), client);
-
-  const keyUpdateCall = eqCalls.find(
-    (c) => c.table === "beta_keys" && c.operation === "update"
-  );
-  assertExists(keyUpdateCall, "Expected an update .eq() call on beta_keys");
+  const keyUpdateCall = eqCalls.find((c) => c.table === "beta_keys" && c.operation === "update");
+  assertExists(keyUpdateCall);
   assertExists(keyUpdateCall.value, "Key update .eq() value must not be undefined or null");
 });
 
 Deno.test("Key update .eq() value matches the normalized key code from request", async () => {
   const { client, eqCalls } = fullSuccessStub();
-  // Send lowercase — should be normalized to uppercase before the query
   await handler(
     makeRequest({ keyCode: "beta-test-key1", email: "new@example.com", password: "password123" }),
     client
   );
-
-  const keyUpdateCall = eqCalls.find(
-    (c) => c.table === "beta_keys" && c.operation === "update"
-  );
+  const keyUpdateCall = eqCalls.find((c) => c.table === "beta_keys" && c.operation === "update");
   assertExists(keyUpdateCall);
-  assertEquals(
-    keyUpdateCall.value,
-    "BETA-TEST-KEY1",
-    "Key update must use the uppercased key_code"
-  );
+  assertEquals(keyUpdateCall.value, "BETA-TEST-KEY1", "Key update must use the uppercased key_code");
 });
 
 Deno.test("Key update with betaKey.id=undefined still uses key_code correctly", async () => {
-  // Simulate the old bug: betaKey comes back with no id field (undefined)
   const keyWithNoId = { ...VALID_KEY, id: undefined };
   const { client, eqCalls } = fullSuccessStub({ betaKey: keyWithNoId });
   const res = await handler(makeRequest(VALID_BODY), client);
-
-  // Should still succeed because we no longer rely on betaKey.id
   assertEquals(res.status, 200);
-
-  const keyUpdateCall = eqCalls.find(
-    (c) => c.table === "beta_keys" && c.operation === "update"
-  );
+  const keyUpdateCall = eqCalls.find((c) => c.table === "beta_keys" && c.operation === "update");
   assertExists(keyUpdateCall);
   assertEquals(keyUpdateCall.column, "key_code");
   assertEquals(keyUpdateCall.value, "BETA-TEST-KEY1");
@@ -492,7 +464,6 @@ Deno.test("Key update with betaKey.id=undefined still uses key_code correctly", 
 Deno.test("Profile update uses id column with a defined user id value", async () => {
   const { client, eqCalls } = fullSuccessStub();
   await handler(makeRequest(VALID_BODY), client);
-
   const profileUpdateCall = eqCalls.find(
     (c) => c.table === "user_profiles" && c.operation === "update"
   );
@@ -504,32 +475,15 @@ Deno.test("Profile update uses id column with a defined user id value", async ()
 Deno.test("Beta key SELECT uses key_code column with the normalized key", async () => {
   const { client, eqCalls } = fullSuccessStub();
   await handler(makeRequest(VALID_BODY), client);
-
-  const keySelectCall = eqCalls.find(
-    (c) => c.table === "beta_keys" && c.operation === "select"
-  );
+  const keySelectCall = eqCalls.find((c) => c.table === "beta_keys" && c.operation === "select");
   assertExists(keySelectCall, "Expected a select .eq() call on beta_keys");
   assertEquals(keySelectCall.column, "key_code");
   assertEquals(keySelectCall.value, "BETA-TEST-KEY1");
 });
 
 // ---------------------------------------------------------------------------
-// Tests — non-fatal key update failure & full success path
+// Tests — full success path
 // ---------------------------------------------------------------------------
-
-Deno.test("Key update fails (0 rows) but profile succeeded -> returns 200 non-fatal", async () => {
-  const { client } = fullSuccessStub({ keyUpdateRows: [] });
-  const res = await handler(makeRequest(VALID_BODY), client);
-  assertEquals(res.status, 200);
-  assertEquals((await res.json()).success, true);
-});
-
-Deno.test("Key update DB error but profile succeeded -> returns 200 non-fatal", async () => {
-  const { client } = fullSuccessStub({ keyUpdateError: { message: "lock timeout" } });
-  const res = await handler(makeRequest(VALID_BODY), client);
-  assertEquals(res.status, 200);
-  assertEquals((await res.json()).success, true);
-});
 
 Deno.test("Full success path returns 200 with user, session and message", async () => {
   const { client } = fullSuccessStub();
