@@ -78,16 +78,20 @@ Deno.serve(async (req: Request) => {
 
     const userId = user.id;
 
+    // Check tier-based bulk upload access: paid and admin tiers are allowed
     const { data: profile, error: permError } = await userClient
       .from("user_profiles")
-      .select("can_bulk_upload")
+      .select("user_tier, can_bulk_upload")
       .eq("id", userId)
       .maybeSingle();
 
-    if (permError || !profile?.can_bulk_upload) {
+    const tier = profile?.user_tier ?? "free";
+    const hasAccess = tier === "paid" || tier === "admin" || profile?.can_bulk_upload === true;
+
+    if (permError || !hasAccess) {
       return new Response(
         JSON.stringify({
-          error: "You do not have permission to perform bulk uploads",
+          error: "You do not have permission to perform bulk uploads. Upgrade to a paid plan to access this feature.",
         }),
         {
           status: 403,
