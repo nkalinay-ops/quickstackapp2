@@ -1,4 +1,4 @@
-package com.quickstack.app;
+package com.quickstackapp.quickstack;
 
 import android.os.Bundle;
 import androidx.core.splashscreen.SplashScreen;
