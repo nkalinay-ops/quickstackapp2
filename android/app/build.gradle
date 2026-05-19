@@ -8,10 +8,10 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.quickstack.app"
+    namespace = "com.quickstackapp.quickstack"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.quickstack.app"
+        applicationId "com.quickstackapp.quickstack"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
