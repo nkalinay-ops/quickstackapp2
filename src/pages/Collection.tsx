@@ -689,37 +689,35 @@ export function Collection() {
 
   const renderHeader = () => (
     <div className="mb-4">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-3xl font-bold">My Collection</h1>
-        <div className="flex bg-gray-900 border border-gray-800 rounded-lg p-1 gap-1">
-          <button
-            onClick={() => switchMode('publisher')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              browseMode === 'publisher' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            <Building2 size={15} />
-            Publisher
-          </button>
-          <button
-            onClick={() => switchMode('series')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              browseMode === 'series' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            <BookOpen size={15} />
-            Series
-          </button>
-          <button
-            onClick={() => switchMode('all')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              browseMode === 'all' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            <List size={15} />
-            All
-          </button>
-        </div>
+      <h1 className="text-3xl font-bold mb-3">My Collection</h1>
+      <div className="flex bg-gray-900 border border-gray-800 rounded-lg p-1 gap-1 mb-4">
+        <button
+          onClick={() => switchMode('publisher')}
+          className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+            browseMode === 'publisher' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          <Building2 size={15} />
+          Publisher
+        </button>
+        <button
+          onClick={() => switchMode('series')}
+          className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+            browseMode === 'series' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          <BookOpen size={15} />
+          Series
+        </button>
+        <button
+          onClick={() => switchMode('all')}
+          className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+            browseMode === 'all' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          <List size={15} />
+          All
+        </button>
       </div>
 
       <div className="relative">
