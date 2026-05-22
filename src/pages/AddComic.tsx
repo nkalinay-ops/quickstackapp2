@@ -501,7 +501,7 @@ export function AddComic() {
     }
   };
 
-  const conditions = ['Mint', 'Near Mint', 'Very Fine', 'Fine', 'Good', 'Fair', 'Poor'];
+  const conditions = ['Mint', 'Near Mint', 'Very Fine', 'Very Good', 'Fine', 'Good', 'Fair', 'Poor'];
 
   if (showCamera) {
     return (

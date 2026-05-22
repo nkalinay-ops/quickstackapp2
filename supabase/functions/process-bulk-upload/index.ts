@@ -31,6 +31,7 @@ const VALID_CONDITIONS = [
   "Mint",
   "Near Mint",
   "Very Fine",
+  "Very Good",
   "Fine",
   "Good",
   "Fair",
