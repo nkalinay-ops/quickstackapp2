@@ -212,25 +212,29 @@ Deno.serve(async (req: Request) => {
 
           let coverVariantValue: number | null = null;
           if (row.cover_variant !== undefined && row.cover_variant !== "") {
-            const parsed = typeof row.cover_variant === "string"
-              ? parseInt(row.cover_variant, 10)
-              : row.cover_variant;
-            if (isNaN(parsed) || parsed < 1) {
-              await serviceClient.from("bulk_upload_errors").insert({
-                job_id,
-                row_number: rowNumber,
-                error_type: "validation",
-                error_message: `Cover Variant must be a positive integer (found: ${row.cover_variant})`,
-                row_data: row,
-              });
-              failedCount++;
-              processedCount++;
-              continue;
+            const raw = String(row.cover_variant).trim().toUpperCase();
+            // Accept letter variants A=1, B=2, C=3, etc.
+            if (/^[A-Z]$/.test(raw)) {
+              coverVariantValue = raw.charCodeAt(0) - 64;
+            } else {
+              const parsed = parseInt(raw, 10);
+              if (isNaN(parsed) || parsed < 1) {
+                await serviceClient.from("bulk_upload_errors").insert({
+                  job_id,
+                  row_number: rowNumber,
+                  error_type: "validation",
+                  error_message: `Cover Variant must be a positive integer or letter (A, B, C...) (found: ${row.cover_variant})`,
+                  row_data: row,
+                });
+                failedCount++;
+                processedCount++;
+                continue;
+              }
+              coverVariantValue = parsed;
             }
-            coverVariantValue = parsed;
           }
 
-          const issueNumber = row.issue_number?.trim() || "";
+          const issueNumber = String(row.issue_number ?? "").trim();
           let duplicateId: string | null = null;
 
           if (issueNumber) {
