@@ -40,12 +40,14 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
             primary
           />
           {canBulkUpload && (
-            <NavButton
-              icon={<Upload size={24} />}
-              label="Bulk"
-              active={currentPage === 'bulk-upload'}
-              onClick={() => onNavigate('bulk-upload')}
-            />
+            <span className="hidden md:contents">
+              <NavButton
+                icon={<Upload size={24} />}
+                label="Bulk"
+                active={currentPage === 'bulk-upload'}
+                onClick={() => onNavigate('bulk-upload')}
+              />
+            </span>
           )}
           <NavButton
             icon={<Heart size={24} />}

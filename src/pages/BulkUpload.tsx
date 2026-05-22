@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { Upload, Download, FileText, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Upload, Download, FileText, CheckCircle2, AlertCircle, Loader2, Monitor } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 interface BulkUploadJob {
@@ -326,6 +326,19 @@ export function BulkUpload() {
   }
 
   return (
+    <>
+      {/* Mobile block — shown only on small screens */}
+      <div className="md:hidden p-8 max-w-2xl mx-auto">
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-8 text-center">
+          <Monitor size={64} className="text-blue-400 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold mb-2">Desktop Only</h2>
+          <p className="text-gray-400">
+            Bulk upload requires a spreadsheet file and is only available on desktop. Please open the app on a computer to use this feature.
+          </p>
+        </div>
+      </div>
+      <div className="hidden md:block">
+
     <div className="p-4 max-w-6xl mx-auto">
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">Bulk Upload</h1>
@@ -514,5 +527,7 @@ export function BulkUpload() {
         )}
       </div>
     </div>
+      </div>
+    </>
   );
 }
