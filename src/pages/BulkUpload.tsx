@@ -28,6 +28,7 @@ interface ComicRow {
   notes?: string;
   copy_count?: string | number;
   cover_variant?: string | number;
+  total_issues?: string | number;
 }
 
 export function BulkUpload() {
@@ -107,6 +108,7 @@ export function BulkUpload() {
         Notes: 'Part 1 of 6',
         'Copy Count': 1,
         'Cover Variant': '',
+        'Total Issues in Arc': 6,
       },
       {
         Series: 'Batman',
@@ -118,6 +120,7 @@ export function BulkUpload() {
         Notes: 'Classic issue',
         'Copy Count': 2,
         'Cover Variant': 2,
+        'Total Issues in Arc': '',
       },
     ];
 
@@ -178,6 +181,7 @@ export function BulkUpload() {
     if (['notes', 'comments', 'description'].includes(normalized)) return 'notes';
     if (['copy count', 'copy_count', 'copies', 'quantity'].includes(normalized)) return 'copy_count';
     if (['cover variant', 'cover_variant', 'variant', 'variant number', 'variant #'].includes(normalized)) return 'cover_variant';
+    if (['total issues in arc', 'total issues', 'total_issues', 'issues in arc', 'arc length'].includes(normalized)) return 'total_issues';
 
     return normalized;
   };
@@ -210,6 +214,7 @@ export function BulkUpload() {
               notes: normalizedRow.notes || '',
               copy_count: normalizedRow.copy_count || '',
               cover_variant: normalizedRow.cover_variant || '',
+              total_issues: normalizedRow.total_issues || '',
             };
           });
 

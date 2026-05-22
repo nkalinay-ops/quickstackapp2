@@ -18,6 +18,7 @@ interface ComicRow {
   notes?: string;
   copy_count?: string | number;
   cover_variant?: string | number;
+  total_issues?: string | number;
 }
 
 interface ProcessRequest {
@@ -234,6 +235,26 @@ Deno.serve(async (req: Request) => {
             }
           }
 
+          let totalIssuesValue: number | null = null;
+          if (row.total_issues !== undefined && row.total_issues !== "") {
+            const parsed = typeof row.total_issues === "string"
+              ? parseInt(row.total_issues, 10)
+              : row.total_issues;
+            if (isNaN(parsed) || parsed < 1) {
+              await serviceClient.from("bulk_upload_errors").insert({
+                job_id,
+                row_number: rowNumber,
+                error_type: "validation",
+                error_message: `Total Issues in Arc must be a positive integer (found: ${row.total_issues})`,
+                row_data: row,
+              });
+              failedCount++;
+              processedCount++;
+              continue;
+            }
+            totalIssuesValue = parsed;
+          }
+
           const issueNumber = String(row.issue_number ?? "").trim();
           let duplicateId: string | null = null;
 
@@ -287,6 +308,7 @@ Deno.serve(async (req: Request) => {
                 bw_image_url: PLACEHOLDER_IMAGE_URL,
                 copy_count: copyCountValue,
                 cover_variant: coverVariantValue,
+                total_issues: totalIssuesValue,
               });
 
             if (insertError) {
