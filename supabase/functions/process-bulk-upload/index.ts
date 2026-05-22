@@ -16,6 +16,8 @@ interface ComicRow {
   year?: string | number;
   condition?: string;
   notes?: string;
+  copy_count?: string | number;
+  cover_variant?: string | number;
 }
 
 interface ProcessRequest {
@@ -188,6 +190,46 @@ Deno.serve(async (req: Request) => {
             continue;
           }
 
+          let copyCountValue = 1;
+          if (row.copy_count !== undefined && row.copy_count !== "") {
+            const parsed = typeof row.copy_count === "string"
+              ? parseInt(row.copy_count, 10)
+              : row.copy_count;
+            if (isNaN(parsed) || parsed < 1) {
+              await serviceClient.from("bulk_upload_errors").insert({
+                job_id,
+                row_number: rowNumber,
+                error_type: "validation",
+                error_message: `Copy Count must be a positive integer (found: ${row.copy_count})`,
+                row_data: row,
+              });
+              failedCount++;
+              processedCount++;
+              continue;
+            }
+            copyCountValue = parsed;
+          }
+
+          let coverVariantValue: number | null = null;
+          if (row.cover_variant !== undefined && row.cover_variant !== "") {
+            const parsed = typeof row.cover_variant === "string"
+              ? parseInt(row.cover_variant, 10)
+              : row.cover_variant;
+            if (isNaN(parsed) || parsed < 1) {
+              await serviceClient.from("bulk_upload_errors").insert({
+                job_id,
+                row_number: rowNumber,
+                error_type: "validation",
+                error_message: `Cover Variant must be a positive integer (found: ${row.cover_variant})`,
+                row_data: row,
+              });
+              failedCount++;
+              processedCount++;
+              continue;
+            }
+            coverVariantValue = parsed;
+          }
+
           const issueNumber = row.issue_number?.trim() || "";
           let duplicateId: string | null = null;
 
@@ -239,7 +281,8 @@ Deno.serve(async (req: Request) => {
                 notes: row.notes?.trim() || "",
                 color_image_url: PLACEHOLDER_IMAGE_URL,
                 bw_image_url: PLACEHOLDER_IMAGE_URL,
-                copy_count: 1,
+                copy_count: copyCountValue,
+                cover_variant: coverVariantValue,
               });
 
             if (insertError) {

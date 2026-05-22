@@ -26,6 +26,8 @@ interface ComicRow {
   year?: string | number;
   condition?: string;
   notes?: string;
+  copy_count?: string | number;
+  cover_variant?: string | number;
 }
 
 export function BulkUpload() {
@@ -103,6 +105,8 @@ export function BulkUpload() {
         Year: '1988',
         Condition: 'Near Mint',
         Notes: 'Part 1 of 6',
+        'Copy Count': 1,
+        'Cover Variant': '',
       },
       {
         Series: 'Batman',
@@ -112,6 +116,8 @@ export function BulkUpload() {
         Year: '1940',
         Condition: 'Good',
         Notes: 'Classic issue',
+        'Copy Count': 2,
+        'Cover Variant': 2,
       },
     ];
 
@@ -170,6 +176,8 @@ export function BulkUpload() {
     if (['year', 'publication year'].includes(normalized)) return 'year';
     if (['condition', 'grade'].includes(normalized)) return 'condition';
     if (['notes', 'comments', 'description'].includes(normalized)) return 'notes';
+    if (['copy count', 'copy_count', 'copies', 'quantity'].includes(normalized)) return 'copy_count';
+    if (['cover variant', 'cover_variant', 'variant', 'variant number', 'variant #'].includes(normalized)) return 'cover_variant';
 
     return normalized;
   };
@@ -200,6 +208,8 @@ export function BulkUpload() {
               year: normalizedRow.year || '',
               condition: normalizedRow.condition || '',
               notes: normalizedRow.notes || '',
+              copy_count: normalizedRow.copy_count || '',
+              cover_variant: normalizedRow.cover_variant || '',
             };
           });
 
