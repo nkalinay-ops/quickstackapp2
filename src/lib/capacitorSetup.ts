@@ -4,8 +4,8 @@ import { App } from '@capacitor/app';
 type LegalPage = 'privacy' | 'terms';
 
 const NATIVE_LEGAL_URLS: Record<LegalPage, string> = {
-  privacy: 'https://quickstackapp2.vercel.app/privacy.html',
-  terms: 'https://quickstackapp2.vercel.app/terms.html',
+  privacy: 'https://appquickstackapp.com/privacy.html',
+  terms: 'https://appquickstackapp.com/terms.html',
 };
 
 const LEGAL_PATHS: Record<LegalPage, string> = {
