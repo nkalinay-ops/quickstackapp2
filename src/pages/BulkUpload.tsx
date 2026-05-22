@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { Upload, Download, FileText, CheckCircle2, AlertCircle, Loader2, Monitor } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { isNativePlatform } from '../lib/capacitorSetup';
 
 interface BulkUploadJob {
   id: string;
@@ -325,10 +326,9 @@ export function BulkUpload() {
     );
   }
 
-  return (
-    <>
-      {/* Mobile block — shown only on small screens */}
-      <div className="md:hidden p-8 max-w-2xl mx-auto">
+  if (isNativePlatform()) {
+    return (
+      <div className="p-8 max-w-2xl mx-auto">
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-8 text-center">
           <Monitor size={64} className="text-blue-400 mx-auto mb-4" />
           <h2 className="text-2xl font-bold mb-2">Desktop Only</h2>
@@ -337,8 +337,10 @@ export function BulkUpload() {
           </p>
         </div>
       </div>
-      <div className="hidden md:block">
+    );
+  }
 
+  return (
     <div className="p-4 max-w-6xl mx-auto">
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">Bulk Upload</h1>
@@ -527,7 +529,5 @@ export function BulkUpload() {
         )}
       </div>
     </div>
-      </div>
-    </>
   );
 }

@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { Home, Library, Plus, Heart, Settings, Shield, Upload } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { isNativePlatform } from '../lib/capacitorSetup';
 
 type LayoutProps = {
   children: ReactNode;
@@ -39,15 +40,13 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
             onClick={() => onNavigate('add')}
             primary
           />
-          {canBulkUpload && (
-            <span className="hidden md:contents">
-              <NavButton
-                icon={<Upload size={24} />}
-                label="Bulk"
-                active={currentPage === 'bulk-upload'}
-                onClick={() => onNavigate('bulk-upload')}
-              />
-            </span>
+          {canBulkUpload && !isNativePlatform() && (
+            <NavButton
+              icon={<Upload size={24} />}
+              label="Bulk"
+              active={currentPage === 'bulk-upload'}
+              onClick={() => onNavigate('bulk-upload')}
+            />
           )}
           <NavButton
             icon={<Heart size={24} />}
