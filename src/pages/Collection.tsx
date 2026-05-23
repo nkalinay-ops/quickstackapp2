@@ -4,10 +4,11 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   Search, Trash2, X, Copy, CreditCard as Edit2, Save, Plus, Minus,
   ChevronRight, Building2, BookOpen, Bookmark, List,
-  Star, AlertTriangle,
+  Star, AlertTriangle, Camera, Loader2,
 } from 'lucide-react';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { AlertModal } from '../components/AlertModal';
+import { CameraCapture } from '../components/CameraCapture';
 
 type BrowseMode = 'publisher' | 'series' | 'all';
 type BrowseLevel = 'publishers' | 'series' | 'stories' | 'issues';
@@ -144,6 +145,8 @@ export function Collection() {
     isOpen: false,
     message: '',
   });
+  const [showCamera, setShowCamera] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -289,11 +292,16 @@ export function Collection() {
         }
       }
 
-      const isComplete = totalIssues !== null && missingIssues.length === 0 && list.length >= totalIssues;
+      // Count distinct issue numbers (ignore duplicates / extra copies)
+      const distinctIssueCount = new Set(
+        list.map(c => c.issue_number.trim()).filter(n => n !== '')
+      ).size || list.length;
+
+      const isComplete = totalIssues !== null && missingIssues.length === 0 && distinctIssueCount >= totalIssues;
 
       return {
         story,
-        issueCount: list.length,
+        issueCount: distinctIssueCount,
         issueRange: issueRange(list),
         coverUrl: cover ? (cover.color_image_url || cover.bw_image_url) : null,
         totalIssues,
@@ -461,7 +469,48 @@ export function Collection() {
     }
   };
 
-  const conditions = ['Mint', 'Near Mint', 'Very Fine', 'Fine', 'Good', 'Fair', 'Poor'];
+  const handlePhotoCapture = async (imageDataUrl: string) => {
+    if (!selectedComic || !user) return;
+    setShowCamera(false);
+    setUploadingPhoto(true);
+    try {
+      const base64Data = imageDataUrl.split(',')[1];
+      const byteNumbers = atob(base64Data).split('').map(c => c.charCodeAt(0));
+      const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'image/jpeg' });
+      const fileName = `${user.id}/${Date.now()}_color.jpg`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('comic-covers')
+        .upload(fileName, blob, { contentType: 'image/jpeg', upsert: false });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage
+        .from('comic-covers')
+        .getPublicUrl(uploadData.path);
+
+      const newUrl = urlData.publicUrl;
+
+      const { error: updateError } = await supabase
+        .from('comics')
+        .update({ color_image_url: newUrl })
+        .eq('id', selectedComic.id);
+
+      if (updateError) throw updateError;
+
+      const updated = { ...selectedComic, color_image_url: newUrl };
+      setSelectedComic(updated);
+      setComics(prev => prev.map(c => c.id === selectedComic.id ? updated : c));
+      if (editedComic?.id === selectedComic.id) setEditedComic(updated);
+    } catch (err) {
+      console.error('Photo upload failed:', err);
+      setAlertModal({ isOpen: true, title: 'Error', message: 'Failed to save photo', type: 'error' });
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const conditions = ['Mint', 'Near Mint', 'Very Fine', 'Very Good', 'Fine', 'Good', 'Fair', 'Poor'];
 
   // ── Loading ───────────────────────────────────────────────────────────────
 
@@ -479,26 +528,57 @@ export function Collection() {
     const displayComic = isEditing && editedComic ? editedComic : selectedComic;
 
     return (
+      <>
+        {showCamera && (
+          <CameraCapture
+            onCapture={handlePhotoCapture}
+            onClose={() => setShowCamera(false)}
+          />
+        )}
       <div className="p-4 max-w-2xl mx-auto">
         <div className="mb-6 flex justify-between items-center">
           <h1 className="text-3xl font-bold">Comic Details</h1>
           <button
-            onClick={() => { setSelectedComic(null); setIsEditing(false); setEditedComic(null); }}
+            onClick={() => { setSelectedComic(null); setIsEditing(false); setEditedComic(null); setShowCamera(false); }}
             className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
           >
             <X size={24} />
           </button>
         </div>
 
-        {selectedComic.color_image_url && (
-          <div className="mb-6">
-            <img
-              src={selectedComic.color_image_url}
-              alt={selectedComic.series}
-              className="w-full max-h-96 object-contain rounded-lg bg-gray-900"
-            />
-          </div>
-        )}
+        <div className="mb-6">
+          {selectedComic.color_image_url ? (
+            <div className="relative group">
+              <img
+                src={selectedComic.color_image_url}
+                alt={selectedComic.series}
+                className="w-full max-h-96 object-contain rounded-lg bg-gray-900"
+              />
+              {isEditing && (
+                <button
+                  onClick={() => setShowCamera(true)}
+                  disabled={uploadingPhoto}
+                  className="absolute bottom-3 right-3 flex items-center gap-2 px-3 py-2 bg-gray-900/80 hover:bg-gray-800 text-white text-sm rounded-lg border border-gray-700 transition-colors disabled:opacity-50"
+                >
+                  {uploadingPhoto ? <Loader2 size={16} className="animate-spin" /> : <Camera size={16} />}
+                  {uploadingPhoto ? 'Saving...' : 'Replace Photo'}
+                </button>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowCamera(true)}
+              disabled={uploadingPhoto}
+              className="w-full h-40 rounded-lg bg-gray-900 border-2 border-dashed border-gray-700 hover:border-gray-500 flex flex-col items-center justify-center gap-2 text-gray-400 hover:text-gray-300 transition-colors disabled:opacity-50"
+            >
+              {uploadingPhoto ? (
+                <><Loader2 size={28} className="animate-spin" /><span className="text-sm">Saving photo...</span></>
+              ) : (
+                <><Camera size={28} /><span className="text-sm">Take a Photo</span></>
+              )}
+            </button>
+          )}
+        </div>
 
         <div className="bg-gray-900 rounded-lg p-6 border border-gray-800 space-y-4">
           <div>
@@ -682,6 +762,7 @@ export function Collection() {
           onClose={() => setAlertModal({ ...alertModal, isOpen: false })}
           title={alertModal.title} message={alertModal.message} type={alertModal.type} />
       </div>
+      </>
     );
   }
 
@@ -689,37 +770,35 @@ export function Collection() {
 
   const renderHeader = () => (
     <div className="mb-4">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-3xl font-bold">My Collection</h1>
-        <div className="flex bg-gray-900 border border-gray-800 rounded-lg p-1 gap-1">
-          <button
-            onClick={() => switchMode('publisher')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              browseMode === 'publisher' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            <Building2 size={15} />
-            Publisher
-          </button>
-          <button
-            onClick={() => switchMode('series')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              browseMode === 'series' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            <BookOpen size={15} />
-            Series
-          </button>
-          <button
-            onClick={() => switchMode('all')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              browseMode === 'all' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            <List size={15} />
-            All
-          </button>
-        </div>
+      <h1 className="text-3xl font-bold mb-3">My Collection</h1>
+      <div className="flex bg-gray-900 border border-gray-800 rounded-lg p-1 gap-1 mb-4">
+        <button
+          onClick={() => switchMode('publisher')}
+          className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+            browseMode === 'publisher' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          <Building2 size={15} />
+          Publisher
+        </button>
+        <button
+          onClick={() => switchMode('series')}
+          className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+            browseMode === 'series' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          <BookOpen size={15} />
+          Series
+        </button>
+        <button
+          onClick={() => switchMode('all')}
+          className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+            browseMode === 'all' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          <List size={15} />
+          All
+        </button>
       </div>
 
       <div className="relative">
