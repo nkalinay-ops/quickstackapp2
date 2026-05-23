@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { Upload, Download, FileText, CheckCircle2, AlertCircle, Loader2, Monitor, ChevronDown, ChevronUp, Database } from 'lucide-react';
+import { Upload, Download, FileText, CheckCircle2, AlertCircle, Loader2, Monitor, ChevronDown, ChevronUp, Database, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { isNativePlatform } from '../lib/capacitorSetup';
 
@@ -49,6 +49,8 @@ export function BulkUpload() {
   const [expandedErrors, setExpandedErrors] = useState<Record<string, BulkUploadError[] | null>>({});
   const [loadingErrors, setLoadingErrors] = useState<Record<string, boolean>>({});
   const [exportingCollection, setExportingCollection] = useState(false);
+  const [deletingJob, setDeletingJob] = useState<string | null>(null);
+  const [confirmDeleteJob, setConfirmDeleteJob] = useState<string | null>(null);
 
   useEffect(() => {
     checkPermission();
@@ -104,6 +106,26 @@ export function BulkUpload() {
 
     if (!error && data) {
       setJobs(data);
+    }
+  };
+
+  const deleteJob = async (jobId: string) => {
+    setDeletingJob(jobId);
+    try {
+      await supabase.from('bulk_upload_errors').delete().eq('job_id', jobId);
+      const { error } = await supabase.from('bulk_upload_jobs').delete().eq('id', jobId);
+      if (error) throw error;
+      setJobs(prev => prev.filter(j => j.id !== jobId));
+      setExpandedErrors(prev => {
+        const next = { ...prev };
+        delete next[jobId];
+        return next;
+      });
+    } catch (err) {
+      console.error('Failed to delete job:', err);
+    } finally {
+      setDeletingJob(null);
+      setConfirmDeleteJob(null);
     }
   };
 
@@ -571,6 +593,27 @@ export function BulkUpload() {
           <div className="space-y-4">
             {jobs.map((job) => (
               <div key={job.id} className="bg-gray-900 border border-gray-800 rounded-lg p-6">
+                {confirmDeleteJob === job.id && (
+                  <div className="mb-4 bg-red-950 border border-red-800 rounded-lg p-4 flex items-center justify-between gap-4">
+                    <p className="text-sm text-red-200">Delete this upload record? This cannot be undone.</p>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => deleteJob(job.id)}
+                        disabled={deletingJob === job.id}
+                        className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1"
+                      >
+                        {deletingJob === job.id ? <Loader2 size={14} className="animate-spin" /> : null}
+                        Delete
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteJob(null)}
+                        className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <h3 className="text-lg font-semibold">{job.filename}</h3>
@@ -578,7 +621,15 @@ export function BulkUpload() {
                       {new Date(job.created_at).toLocaleString()}
                     </p>
                   </div>
-                  <div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setConfirmDeleteJob(confirmDeleteJob === job.id ? null : job.id)}
+                      disabled={deletingJob === job.id || job.status === 'processing'}
+                      className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-950 rounded-lg transition-colors disabled:opacity-30"
+                      title="Delete record"
+                    >
+                      <Trash2 size={16} />
+                    </button>
                     {job.status === 'completed' && (
                       <span className="px-3 py-1 bg-green-900 text-green-300 rounded-full text-sm flex items-center gap-1">
                         <CheckCircle2 size={16} />
