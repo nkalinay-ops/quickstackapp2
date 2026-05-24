@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { ArrowLeft, Mail } from 'lucide-react';
 import { isNativePlatform } from '../lib/capacitorSetup';
 
-const HOSTED_FORGOT_PASSWORD_URL = 'https://quickstackapp2.vercel.app/?page=forgot-password';
+const HOSTED_FORGOT_PASSWORD_URL = 'https://appquickstackapp.com/?page=forgot-password';
 
 export function ForgotPassword() {
   const [email, setEmail] = useState('');

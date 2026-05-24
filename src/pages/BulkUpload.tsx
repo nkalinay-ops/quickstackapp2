@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { Upload, Download, FileText, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { Upload, Download, FileText, CheckCircle2, AlertCircle, Loader2, Monitor, ChevronDown, ChevronUp, Database, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { isNativePlatform } from '../lib/capacitorSetup';
 
 interface BulkUploadJob {
   id: string;
@@ -17,6 +18,14 @@ interface BulkUploadJob {
   completed_at: string | null;
 }
 
+interface BulkUploadError {
+  id: string;
+  row_number: number;
+  error_type: string;
+  error_message: string;
+  row_data: Record<string, unknown>;
+}
+
 interface ComicRow {
   series: string;
   story?: string;
@@ -25,6 +34,9 @@ interface ComicRow {
   year?: string | number;
   condition?: string;
   notes?: string;
+  copy_count?: string | number;
+  cover_variant?: string | number;
+  total_issues?: string | number;
 }
 
 export function BulkUpload() {
@@ -34,6 +46,11 @@ export function BulkUpload() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [expandedErrors, setExpandedErrors] = useState<Record<string, BulkUploadError[] | null>>({});
+  const [loadingErrors, setLoadingErrors] = useState<Record<string, boolean>>({});
+  const [exportingCollection, setExportingCollection] = useState(false);
+  const [deletingJob, setDeletingJob] = useState<string | null>(null);
+  const [confirmDeleteJob, setConfirmDeleteJob] = useState<string | null>(null);
 
   useEffect(() => {
     checkPermission();
@@ -92,6 +109,95 @@ export function BulkUpload() {
     }
   };
 
+  const deleteJob = async (jobId: string) => {
+    setDeletingJob(jobId);
+    try {
+      await supabase.from('bulk_upload_errors').delete().eq('job_id', jobId);
+      const { error } = await supabase.from('bulk_upload_jobs').delete().eq('id', jobId);
+      if (error) throw error;
+      setJobs(prev => prev.filter(j => j.id !== jobId));
+      setExpandedErrors(prev => {
+        const next = { ...prev };
+        delete next[jobId];
+        return next;
+      });
+    } catch (err) {
+      console.error('Failed to delete job:', err);
+    } finally {
+      setDeletingJob(null);
+      setConfirmDeleteJob(null);
+    }
+  };
+
+  const toggleErrors = async (jobId: string) => {
+    if (expandedErrors[jobId] !== undefined) {
+      setExpandedErrors(prev => {
+        const next = { ...prev };
+        delete next[jobId];
+        return next;
+      });
+      return;
+    }
+
+    setLoadingErrors(prev => ({ ...prev, [jobId]: true }));
+
+    const { data, error } = await supabase
+      .from('bulk_upload_errors')
+      .select('id, row_number, error_type, error_message, row_data')
+      .eq('job_id', jobId)
+      .order('row_number', { ascending: true });
+
+    setLoadingErrors(prev => ({ ...prev, [jobId]: false }));
+
+    if (!error) {
+      setExpandedErrors(prev => ({ ...prev, [jobId]: data ?? [] }));
+    }
+  };
+
+  const exportCollection = async () => {
+    if (!user) return;
+    setExportingCollection(true);
+
+    try {
+      const { data, error } = await supabase
+        .from('comics')
+        .select('series, story, issue_number, publisher, year, condition, notes, copy_count, cover_variant, total_issues')
+        .eq('user_id', user.id)
+        .order('series', { ascending: true });
+
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        alert('Your collection is empty — nothing to export.');
+        return;
+      }
+
+      const rows = data.map(c => ({
+        'Series': c.series ?? '',
+        'Story': c.story ?? '',
+        'Issue Number': c.issue_number ?? '',
+        'Publisher': c.publisher ?? '',
+        'Year': c.year ?? '',
+        'Condition': c.condition ?? '',
+        'Notes': c.notes ?? '',
+        'Copy Count': c.copy_count ?? 1,
+        'Cover Variant': c.cover_variant ?? '',
+        'Total Issues in Arc': c.total_issues ?? '',
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Collection');
+
+      const today = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(workbook, `my_collection_${today}.xlsx`);
+    } catch (err) {
+      console.error('Export error:', err);
+      alert('Failed to export collection. Please try again.');
+    } finally {
+      setExportingCollection(false);
+    }
+  };
+
   const downloadTemplate = () => {
     const template = [
       {
@@ -102,6 +208,9 @@ export function BulkUpload() {
         Year: '1988',
         Condition: 'Near Mint',
         Notes: 'Part 1 of 6',
+        'Copy Count': 1,
+        'Cover Variant': '',
+        'Total Issues in Arc': 6,
       },
       {
         Series: 'Batman',
@@ -111,6 +220,9 @@ export function BulkUpload() {
         Year: '1940',
         Condition: 'Good',
         Notes: 'Classic issue',
+        'Copy Count': 2,
+        'Cover Variant': 2,
+        'Total Issues in Arc': '',
       },
     ];
 
@@ -169,6 +281,9 @@ export function BulkUpload() {
     if (['year', 'publication year'].includes(normalized)) return 'year';
     if (['condition', 'grade'].includes(normalized)) return 'condition';
     if (['notes', 'comments', 'description'].includes(normalized)) return 'notes';
+    if (['copy count', 'copy_count', 'copies', 'quantity'].includes(normalized)) return 'copy_count';
+    if (['cover variant', 'cover_variant', 'variant', 'variant number', 'variant #'].includes(normalized)) return 'cover_variant';
+    if (['total issues in arc', 'total issues', 'total_issues', 'issues in arc', 'arc length'].includes(normalized)) return 'total_issues';
 
     return normalized;
   };
@@ -199,6 +314,9 @@ export function BulkUpload() {
               year: normalizedRow.year || '',
               condition: normalizedRow.condition || '',
               notes: normalizedRow.notes || '',
+              copy_count: normalizedRow.copy_count || '',
+              cover_variant: normalizedRow.cover_variant || '',
+              total_issues: normalizedRow.total_issues || '',
             };
           });
 
@@ -248,11 +366,9 @@ export function BulkUpload() {
         throw new Error('Failed to create upload job');
       }
 
-      // Get user session for authentication
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
       if (sessionError || !session) {
-        // Mark job as failed
         await supabase
           .from('bulk_upload_jobs')
           .update({ status: 'failed' })
@@ -280,7 +396,6 @@ export function BulkUpload() {
         const errorData = await response.json().catch(() => ({}));
         const errorMessage = errorData.error || errorData.details || 'Failed to process upload';
 
-        // Mark job as failed
         await supabase
           .from('bulk_upload_jobs')
           .update({
@@ -325,6 +440,20 @@ export function BulkUpload() {
     );
   }
 
+  if (isNativePlatform()) {
+    return (
+      <div className="p-8 max-w-2xl mx-auto">
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-8 text-center">
+          <Monitor size={64} className="text-blue-400 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold mb-2">Desktop Only</h2>
+          <p className="text-gray-400">
+            Bulk upload requires a spreadsheet file and is only available on desktop. Please open the app on a computer to use this feature.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 max-w-6xl mx-auto">
       <div className="mb-8">
@@ -339,13 +468,32 @@ export function BulkUpload() {
             Upload File
           </h2>
 
-          <button
-            onClick={downloadTemplate}
-            className="w-full mb-4 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
-          >
-            <Download size={20} />
-            Download Template
-          </button>
+          <div className="flex gap-3 mb-4">
+            <button
+              onClick={downloadTemplate}
+              className="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              <Download size={20} />
+              Download Template
+            </button>
+            <button
+              onClick={exportCollection}
+              disabled={exportingCollection}
+              className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {exportingCollection ? (
+                <>
+                  <Loader2 size={20} className="animate-spin" />
+                  Exporting...
+                </>
+              ) : (
+                <>
+                  <Database size={20} />
+                  Export Collection
+                </>
+              )}
+            </button>
+          </div>
 
           <div
             onDragOver={handleDragOver}
@@ -427,6 +575,10 @@ export function BulkUpload() {
               <span className="font-bold text-blue-500">5.</span>
               <span>All uploads receive a placeholder image until you scan individual covers</span>
             </li>
+            <li className="flex gap-2">
+              <span className="font-bold text-blue-500">6.</span>
+              <span>Use "Export Collection" to download your existing collection in the same format</span>
+            </li>
           </ol>
         </div>
       </div>
@@ -441,6 +593,27 @@ export function BulkUpload() {
           <div className="space-y-4">
             {jobs.map((job) => (
               <div key={job.id} className="bg-gray-900 border border-gray-800 rounded-lg p-6">
+                {confirmDeleteJob === job.id && (
+                  <div className="mb-4 bg-red-950 border border-red-800 rounded-lg p-4 flex items-center justify-between gap-4">
+                    <p className="text-sm text-red-200">Delete this upload record? This cannot be undone.</p>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => deleteJob(job.id)}
+                        disabled={deletingJob === job.id}
+                        className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1"
+                      >
+                        {deletingJob === job.id ? <Loader2 size={14} className="animate-spin" /> : null}
+                        Delete
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteJob(null)}
+                        className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded-lg transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <h3 className="text-lg font-semibold">{job.filename}</h3>
@@ -448,7 +621,15 @@ export function BulkUpload() {
                       {new Date(job.created_at).toLocaleString()}
                     </p>
                   </div>
-                  <div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setConfirmDeleteJob(confirmDeleteJob === job.id ? null : job.id)}
+                      disabled={deletingJob === job.id || job.status === 'processing'}
+                      className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-950 rounded-lg transition-colors disabled:opacity-30"
+                      title="Delete record"
+                    >
+                      <Trash2 size={16} />
+                    </button>
                     {job.status === 'completed' && (
                       <span className="px-3 py-1 bg-green-900 text-green-300 rounded-full text-sm flex items-center gap-1">
                         <CheckCircle2 size={16} />
@@ -508,6 +689,61 @@ export function BulkUpload() {
                     <p className="text-sm text-gray-400">Errors</p>
                   </div>
                 </div>
+
+                {job.failed_rows > 0 && (
+                  <div className="mt-4">
+                    <button
+                      onClick={() => toggleErrors(job.id)}
+                      disabled={loadingErrors[job.id]}
+                      className="flex items-center gap-2 text-sm text-red-400 hover:text-red-300 transition-colors disabled:opacity-50"
+                    >
+                      {loadingErrors[job.id] ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : expandedErrors[job.id] !== undefined ? (
+                        <ChevronUp size={16} />
+                      ) : (
+                        <ChevronDown size={16} />
+                      )}
+                      {expandedErrors[job.id] !== undefined ? 'Hide' : 'View'} {job.failed_rows} error{job.failed_rows !== 1 ? 's' : ''}
+                    </button>
+
+                    {expandedErrors[job.id] && (
+                      <div className="mt-3 border border-red-900 rounded-lg overflow-hidden">
+                        <div className="bg-red-950 px-4 py-2 text-xs font-semibold text-red-300 uppercase tracking-wider">
+                          Row-level errors
+                        </div>
+                        <div className="divide-y divide-gray-800 max-h-80 overflow-y-auto">
+                          {expandedErrors[job.id]!.map((err) => (
+                            <div key={err.id} className="px-4 py-3">
+                              <div className="flex items-start justify-between gap-4 mb-1">
+                                <span className="text-xs font-mono text-gray-500 whitespace-nowrap">Row {err.row_number}</span>
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                  err.error_type === 'validation'
+                                    ? 'bg-yellow-900 text-yellow-300'
+                                    : 'bg-red-900 text-red-300'
+                                }`}>
+                                  {err.error_type}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-200 mb-1">{err.error_message}</p>
+                              {(err.row_data?.series || err.row_data?.issue_number) && (
+                                <p className="text-xs text-gray-500">
+                                  {[
+                                    err.row_data.series,
+                                    err.row_data.story,
+                                    err.row_data.issue_number ? `#${err.row_data.issue_number}` : null,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' — ')}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
