@@ -97,9 +97,18 @@ export function ResetPassword() {
               <CheckCircle className="text-green-400" size={32} />
             </div>
             <h1 className="text-3xl font-bold text-white mb-2">Password updated successfully</h1>
-            <p className="text-gray-400">
-              Password updated successfully. You can now return to the QuickStack app and sign in with your new password.
+            <p className="text-gray-400 mb-6">
+              You can now sign in with your new password.
             </p>
+            <button
+              onClick={() => {
+                window.history.replaceState({}, '', '/');
+                window.dispatchEvent(new CustomEvent('navigate', { detail: 'auth' }));
+              }}
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+            >
+              Go to login
+            </button>
           </div>
         </div>
       </div>
