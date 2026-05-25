@@ -9,27 +9,30 @@
  *   xhdpi:   96x96  (launcher), 216x216  (foreground)
  *   xxhdpi: 144x144 (launcher), 324x324  (foreground)
  *   xxxhdpi:192x192 (launcher), 432x432  (foreground)
- *
- * The foreground layer is 2.25x the launcher size because Android adaptive
- * icons use a 108dp canvas with a 72dp safe zone (ratio = 108/72 = 1.5),
- * but we use 1:1 to fill the full adaptive canvas so the icon looks full-bleed.
  */
 
 import https from 'https';
-import { createWriteStream, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
+import { createWriteStream, mkdirSync, statSync, existsSync } from 'fs';
+import { join, resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import sharp from 'sharp';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, '..');
-const SOURCE_URL = 'https://i.imgur.com/jaWX13k.png';
-const TMP_SOURCE = join('/tmp', 'quickstack-icon-source.png');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
-const ANDROID_RES = join(
-  PROJECT_ROOT,
-  'android/app/src/main/res'
-);
+// Resolve project root as the parent of the scripts/ directory.
+// Use resolve() to get a canonical absolute path regardless of CWD.
+const PROJECT_ROOT = resolve(__dirname, '..');
+const ANDROID_RES = join(PROJECT_ROOT, 'android', 'app', 'src', 'main', 'res');
+
+if (!existsSync(ANDROID_RES)) {
+  console.error(`ERROR: Android res directory not found at:\n  ${ANDROID_RES}`);
+  console.error('Make sure the Android project is initialized (run: npx cap add android)');
+  process.exit(1);
+}
+
+const SOURCE_URL = 'https://i.imgur.com/jaWX13k.png';
+const TMP_SOURCE = '/tmp/quickstack-icon-source.png';
 
 const DENSITIES = [
   { dir: 'mipmap-mdpi',    launcher: 48,  foreground: 108 },
@@ -58,52 +61,61 @@ function download(url, dest) {
   });
 }
 
+function verifyWritten(filePath, minBytes = 100) {
+  const size = statSync(filePath).size;
+  if (size < minBytes) {
+    throw new Error(`Output file looks empty: ${filePath} (${size} bytes)`);
+  }
+  return size;
+}
+
 async function generate() {
+  console.log(`Project root: ${PROJECT_ROOT}`);
+  console.log(`Android res:  ${ANDROID_RES}\n`);
+
   console.log('Downloading source icon from Imgur...');
   await download(SOURCE_URL, TMP_SOURCE);
-  console.log(`  Saved to ${TMP_SOURCE}`);
+  const srcSize = statSync(TMP_SOURCE).size;
+  console.log(`  Saved to ${TMP_SOURCE} (${srcSize} bytes)`);
 
-  const src = sharp(TMP_SOURCE);
-  const meta = await src.metadata();
-  console.log(`  Source dimensions: ${meta.width}x${meta.height}`);
+  const meta = await sharp(TMP_SOURCE).metadata();
+  console.log(`  Source dimensions: ${meta.width}x${meta.height}\n`);
 
   for (const density of DENSITIES) {
     const outDir = join(ANDROID_RES, density.dir);
     mkdirSync(outDir, { recursive: true });
 
-    // Standard launcher icon (square)
-    const launcherOut = join(outDir, 'ic_launcher.png');
-    await sharp(TMP_SOURCE)
-      .resize(density.launcher, density.launcher, { fit: 'cover' })
-      .png()
-      .toFile(launcherOut);
-    console.log(`  ${density.dir}/ic_launcher.png  (${density.launcher}x${density.launcher})`);
-
-    // Round launcher icon (circle-cropped)
     const size = density.launcher;
     const half = size / 2;
     const circleMask = Buffer.from(
       `<svg><circle cx="${half}" cy="${half}" r="${half}" /></svg>`
     );
+
+    const launcherOut = join(outDir, 'ic_launcher.png');
+    await sharp(TMP_SOURCE)
+      .resize(size, size, { fit: 'cover' })
+      .png()
+      .toFile(launcherOut);
+    console.log(`  ${density.dir}/ic_launcher.png  (${size}x${size})  ${verifyWritten(launcherOut)} bytes`);
+
     const roundOut = join(outDir, 'ic_launcher_round.png');
     await sharp(TMP_SOURCE)
       .resize(size, size, { fit: 'cover' })
       .composite([{ input: circleMask, blend: 'dest-in' }])
       .png()
       .toFile(roundOut);
-    console.log(`  ${density.dir}/ic_launcher_round.png  (${size}x${size})`);
+    console.log(`  ${density.dir}/ic_launcher_round.png  (${size}x${size})  ${verifyWritten(roundOut)} bytes`);
 
-    // Adaptive icon foreground (full-bleed on 108dp canvas)
     const fgSize = density.foreground;
     const fgOut = join(outDir, 'ic_launcher_foreground.png');
     await sharp(TMP_SOURCE)
       .resize(fgSize, fgSize, { fit: 'cover' })
       .png()
       .toFile(fgOut);
-    console.log(`  ${density.dir}/ic_launcher_foreground.png  (${fgSize}x${fgSize})`);
+    console.log(`  ${density.dir}/ic_launcher_foreground.png  (${fgSize}x${fgSize})  ${verifyWritten(fgOut)} bytes\n`);
   }
 
-  console.log('\nDone! All Android mipmap icons generated.');
+  console.log('Done! All Android mipmap icons generated from your Imgur logo.');
   console.log('Run `npm run cap:sync` to sync changes to the Android project.');
 }
 
