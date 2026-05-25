@@ -32,7 +32,8 @@ if (!existsSync(ANDROID_RES)) {
 }
 
 const SOURCE_URL = 'https://i.imgur.com/jaWX13k.png';
-const TMP_SOURCE = '/tmp/quickstack-icon-source.png';
+const TMP_SOURCE = join(PROJECT_ROOT, 'quickstack-icon-source.png');
+
 
 const DENSITIES = [
   { dir: 'mipmap-mdpi',    launcher: 48,  foreground: 108 },
