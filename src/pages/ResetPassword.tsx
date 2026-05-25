@@ -79,6 +79,7 @@ export function ResetPassword() {
     try {
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
+      await supabase.auth.signOut();
       setSuccess(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update password');
