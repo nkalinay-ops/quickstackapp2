@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
 import { ArrowLeft, Mail } from 'lucide-react';
 import { isNativePlatform } from '../lib/capacitorSetup';
 
@@ -32,8 +33,15 @@ export function ForgotPassword() {
     }
   };
 
-  const handleBackToLogin = () => {
+  const handleBackToLogin = async () => {
+    await supabase.auth.signOut({ scope: 'global' });
+    window.history.replaceState({}, '', '/');
     window.dispatchEvent(new CustomEvent('navigate', { detail: 'auth' }));
+  };
+
+  const handleOpenResetPage = async () => {
+    await supabase.auth.signOut({ scope: 'global' });
+    window.open(HOSTED_FORGOT_PASSWORD_URL, '_system');
   };
 
   if (success) {
@@ -84,7 +92,7 @@ export function ForgotPassword() {
           <div className="bg-gray-900 p-6 rounded-lg space-y-4">
             <button
               type="button"
-              onClick={() => window.open(HOSTED_FORGOT_PASSWORD_URL, '_system')}
+              onClick={handleOpenResetPage}
               className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
             >
               Open Password Reset Page
