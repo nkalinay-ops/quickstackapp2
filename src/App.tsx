@@ -13,9 +13,10 @@ import { AdminPanel } from './pages/AdminPanel';
 import { BulkUpload } from './pages/BulkUpload';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
+import { EmailConfirmed } from './pages/EmailConfirmed';
 
 type LayoutPage = 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload';
-type Page = 'auth' | 'forgot-password' | 'reset-password' | LayoutPage;
+type Page = 'auth' | 'forgot-password' | 'reset-password' | 'email-confirmed' | LayoutPage;
 
 function AppContent() {
   const { user, loading, isAdmin } = useAuth();
@@ -23,8 +24,13 @@ function AppContent() {
   const getInitialPage = (): Page => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('page') === 'reset-password') return 'reset-password';
-    if (params.get('code')) return 'reset-password';
+    // Only treat ?code= as a reset link when Supabase also sets type=recovery.
+    // Email confirmation callbacks also use ?code= but with type=signup or type=email.
+    if (params.get('code') && params.get('type') === 'recovery') return 'reset-password';
     if (params.get('page') === 'forgot-password') return 'forgot-password';
+    if (params.get('page') === 'email-confirmed') return 'email-confirmed';
+    // Any remaining ?code= is an email confirmation — route to the confirmed page.
+    if (params.get('code')) return 'email-confirmed';
     return 'dashboard';
   };
 
@@ -32,14 +38,13 @@ function AppContent() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const isResetUrl = params.has('code') || params.get('page') === 'reset-password';
-    if (currentPage === 'reset-password' || currentPage === 'forgot-password' || isResetUrl) return;
+    const isResetUrl = (params.has('code') && params.get('type') === 'recovery') || params.get('page') === 'reset-password';
+    if (currentPage === 'reset-password' || currentPage === 'forgot-password' || currentPage === 'email-confirmed' || isResetUrl) return;
 
     if (!user) {
       window.history.replaceState({}, '', window.location.pathname);
       setCurrentPage('auth');
     } else if (currentPage === 'auth') {
-      window.history.replaceState({}, '', window.location.pathname);
       setCurrentPage('dashboard');
     }
   }, [user, currentPage]);
@@ -53,13 +58,17 @@ function AppContent() {
     return () => window.removeEventListener('navigate', handleNavigate);
   }, []);
 
-  // Show reset-password immediately — it handles its own code exchange
+  // These pages handle their own auth state — render outside the normal auth gate
   if (currentPage === 'reset-password') {
     return <ResetPassword />;
   }
 
   if (currentPage === 'forgot-password') {
     return <ForgotPassword />;
+  }
+
+  if (currentPage === 'email-confirmed') {
+    return <EmailConfirmed />;
   }
 
   if (loading) {

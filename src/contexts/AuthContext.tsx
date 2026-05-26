@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
@@ -10,7 +10,7 @@ type AuthContextType = {
   isAdmin: boolean;
   userTier: UserTier;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string) => Promise<{ needsEmailConfirmation: boolean }>;
   signOut: () => Promise<void>;
   refreshAdminStatus: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -25,6 +25,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [userTier, setUserTier] = useState<UserTier>('free');
+  // Ref (not state) so the onAuthStateChange closure always reads the current value.
+  // Without this guard, email confirmation in another tab fires SIGNED_IN and auto-logs in the user.
+  const expectingSignIn = useRef(false);
 
   const checkTerminationStatus = async (userId: string): Promise<boolean> => {
     const { data } = await supabase
@@ -59,11 +62,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    // If this is a password-reset callback (?code= or ?page=reset-password),
-    // skip auth init entirely. The Supabase client will auto-exchange the code
-    // and emit PASSWORD_RECOVERY, which ResetPassword.tsx handles directly.
+    // If this is a password-reset callback, skip auth init entirely.
+    // The Supabase client will auto-exchange the code and emit PASSWORD_RECOVERY,
+    // which ResetPassword.tsx handles directly.
+    // Email confirmation callbacks also have ?code= but with type != 'recovery' —
+    // those must NOT skip auth init so the SIGNED_IN event fires normally.
     const params = new URLSearchParams(window.location.search);
-    const isResetFlow = params.has('code') || params.get('page') === 'reset-password';
+    const isResetFlow =
+      (params.has('code') && params.get('type') === 'recovery') ||
+      params.get('page') === 'reset-password';
     if (isResetFlow) {
       setLoading(false);
       return;
@@ -88,6 +95,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
 
           if (session?.user) {
+            // A SIGNED_IN event that wasn't triggered by an explicit signIn() call
+            // means Supabase auto-created a session (e.g. email confirmation link clicked
+            // in another tab). Sign out immediately to prevent auto-login.
+            if (event === 'SIGNED_IN' && !expectingSignIn.current) {
+              await supabase.auth.signOut();
+              setUser(null);
+              setIsAdmin(false);
+              setUserTier('free');
+              setLoading(false);
+              return;
+            }
             const isTerminated = await checkTerminationStatus(session.user.id);
             if (isTerminated) {
               await supabase.auth.signOut();
@@ -114,38 +132,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = async (email: string, password: string) => {
+    expectingSignIn.current = true;
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-    console.log('Login successful');
+    if (error) {
+      expectingSignIn.current = false;
+      throw error;
+    }
 
     const { data: { session } } = await supabase.auth.getSession();
-    console.log('Session after login:', session);
 
     if (data.user) {
+      // Block unconfirmed users — Supabase may issue a session before confirmation
+      // depending on project settings. We enforce the requirement explicitly.
+      if (!data.user.email_confirmed_at) {
+        expectingSignIn.current = false;
+        await supabase.auth.signOut();
+        throw new Error('Please confirm your email address before signing in. Check your inbox for the confirmation link.');
+      }
+
       const terminationData = await supabase
         .from('user_terminations')
         .select('user_id')
         .eq('user_id', data.user.id)
         .maybeSingle();
-      console.log('Termination check result:', terminationData.data);
 
       if (terminationData.data) {
+        expectingSignIn.current = false;
         await supabase.auth.signOut();
         throw new Error('Access denied. Please contact support if you believe this is an error.');
       }
 
-      if (session) {
-        await fetchAdminStatus(data.user.id);
-        setUser(data.user);
-        console.log('Navigating to dashboard');
-        window.dispatchEvent(new CustomEvent('navigate', { detail: 'dashboard' }));
-      }
     }
+    expectingSignIn.current = false;
   };
 
   const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({ email, password });
+    const emailRedirectTo =
+      import.meta.env.VITE_EMAIL_CONFIRM_REDIRECT_URL ||
+      `${window.location.origin}/?page=email-confirmed`;
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo },
+    });
     if (error) throw error;
+    // Supabase returns a session immediately only when email confirmation is disabled.
+    // When confirmation is required, session is null and the user must verify first.
+    return { needsEmailConfirmation: !data.session };
   };
 
   const signOut = async () => {

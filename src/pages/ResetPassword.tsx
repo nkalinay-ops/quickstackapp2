@@ -7,6 +7,7 @@ export function ResetPassword() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -101,13 +102,16 @@ export function ResetPassword() {
               You can now sign in with your new password.
             </p>
             <button
-              onClick={() => {
+              disabled={signingOut}
+              onClick={async () => {
+                setSigningOut(true);
+                await supabase.auth.signOut({ scope: 'global' });
                 window.history.replaceState({}, '', '/');
                 window.dispatchEvent(new CustomEvent('navigate', { detail: 'auth' }));
               }}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Go to login
+              {signingOut ? 'Signing out...' : 'Go to login'}
             </button>
           </div>
         </div>
