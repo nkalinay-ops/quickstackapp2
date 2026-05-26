@@ -7,15 +7,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.error('[QuickStack] Missing Supabase environment variables. Check your .env file.');
 }
 
-console.log('Supabase auth config:', {
-  detectSessionInUrl: true,
-  flowType: 'pkce'
-});
-
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     detectSessionInUrl: true,
-    flowType: 'pkce',
     autoRefreshToken: true,
     persistSession: true,
   },
