@@ -33,35 +33,21 @@ export function ResetPassword() {
       setExchanging(false);
     };
 
-    // Primary path: explicitly exchange the PKCE code for a session.
-    // This is reliable on both desktop and mobile system browsers because it
-    // makes an immediate network call rather than waiting for the Supabase
-    // client to auto-detect and exchange the code in the background.
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
-
-    if (code) {
-      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
-        if (error) {
-          fail('This reset link has expired or already been used. Please request a new one.');
-        } else {
-          confirm();
-        }
-      });
-    }
-
-    // Secondary path: handle cases where the Supabase client already exchanged
-    // the code before this component mounted (fast desktop connections) and
-    // fires PASSWORD_RECOVERY, or where the page was navigated to with
-    // ?page=reset-password after a previous exchange.
+    // The Supabase client (detectSessionInUrl: true) auto-exchanges the ?code=
+    // parameter before any React component mounts. Calling exchangeCodeForSession
+    // explicitly after that consumes an already-used code and always errors.
+    // Instead, listen for PASSWORD_RECOVERY which the client emits after a
+    // successful auto-exchange, and use a timeout as the true expired-link path.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         confirm();
       }
     });
 
-    // Fallback for ?page=reset-password (no code in URL) — session already exists.
-    if (!code) {
+    // If the page was reached via ?page=reset-password (no code — e.g. a direct
+    // navigation after a previous exchange), check for an existing session.
+    const params = new URLSearchParams(window.location.search);
+    if (!params.get('code')) {
       supabase.auth.getSession().then(({ data }) => {
         if (data.session) {
           confirm();
@@ -71,8 +57,14 @@ export function ResetPassword() {
       });
     }
 
+    // Timeout: if PASSWORD_RECOVERY never fires, the link was invalid or expired.
+    const timeout = setTimeout(() => {
+      fail('This reset link has expired or already been used. Please request a new one.');
+    }, 8000);
+
     return () => {
       subscription.unsubscribe();
+      clearTimeout(timeout);
     };
   }, []);
 
