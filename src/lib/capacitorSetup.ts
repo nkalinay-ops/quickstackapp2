@@ -69,9 +69,15 @@ export function handleDeepLink(url: string): string | null {
     }
 
     const code = searchParams.get('code');
-    if (code) {
-      window.history.replaceState({}, '', `/?page=reset-password&code=${encodeURIComponent(code)}`);
+    if (code && type === 'recovery') {
+      window.history.replaceState({}, '', `/?page=reset-password&code=${encodeURIComponent(code)}&type=recovery`);
       return 'reset-password';
+    }
+    if (code) {
+      // Email confirmation callback — preserve the code and type for the auth listener
+      const confirmUrl = `/?page=email-confirmed&code=${encodeURIComponent(code)}${type ? `&type=${type}` : ''}`;
+      window.history.replaceState({}, '', confirmUrl);
+      return 'email-confirmed';
     }
 
     if (page) {
