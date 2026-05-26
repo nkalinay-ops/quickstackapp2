@@ -24,9 +24,13 @@ function AppContent() {
   const getInitialPage = (): Page => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('page') === 'reset-password') return 'reset-password';
-    if (params.get('code')) return 'reset-password';
+    // Only treat ?code= as a reset link when Supabase also sets type=recovery.
+    // Email confirmation callbacks also use ?code= but with type=signup or type=email.
+    if (params.get('code') && params.get('type') === 'recovery') return 'reset-password';
     if (params.get('page') === 'forgot-password') return 'forgot-password';
     if (params.get('page') === 'email-confirmed') return 'email-confirmed';
+    // Any remaining ?code= is an email confirmation — route to the confirmed page.
+    if (params.get('code')) return 'email-confirmed';
     return 'dashboard';
   };
 
@@ -34,7 +38,7 @@ function AppContent() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const isResetUrl = params.has('code') || params.get('page') === 'reset-password';
+    const isResetUrl = (params.has('code') && params.get('type') === 'recovery') || params.get('page') === 'reset-password';
     if (currentPage === 'reset-password' || currentPage === 'forgot-password' || currentPage === 'email-confirmed' || isResetUrl) return;
 
     if (!user) {

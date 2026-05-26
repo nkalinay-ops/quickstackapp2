@@ -59,11 +59,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    // If this is a password-reset callback (?code= or ?page=reset-password),
-    // skip auth init entirely. The Supabase client will auto-exchange the code
-    // and emit PASSWORD_RECOVERY, which ResetPassword.tsx handles directly.
+    // If this is a password-reset callback, skip auth init entirely.
+    // The Supabase client will auto-exchange the code and emit PASSWORD_RECOVERY,
+    // which ResetPassword.tsx handles directly.
+    // Email confirmation callbacks also have ?code= but with type != 'recovery' —
+    // those must NOT skip auth init so the SIGNED_IN event fires normally.
     const params = new URLSearchParams(window.location.search);
-    const isResetFlow = params.has('code') || params.get('page') === 'reset-password';
+    const isResetFlow =
+      (params.has('code') && params.get('type') === 'recovery') ||
+      params.get('page') === 'reset-password';
     if (isResetFlow) {
       setLoading(false);
       return;
@@ -116,18 +120,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
-    console.log('Login successful');
 
     const { data: { session } } = await supabase.auth.getSession();
-    console.log('Session after login:', session);
 
     if (data.user) {
+      // Block unconfirmed users — Supabase may issue a session before confirmation
+      // depending on project settings. We enforce the requirement explicitly.
+      if (!data.user.email_confirmed_at) {
+        await supabase.auth.signOut();
+        throw new Error('Please confirm your email address before signing in. Check your inbox for the confirmation link.');
+      }
+
       const terminationData = await supabase
         .from('user_terminations')
         .select('user_id')
         .eq('user_id', data.user.id)
         .maybeSingle();
-      console.log('Termination check result:', terminationData.data);
 
       if (terminationData.data) {
         await supabase.auth.signOut();
@@ -137,7 +145,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (session) {
         await fetchAdminStatus(data.user.id);
         setUser(data.user);
-        console.log('Navigating to dashboard');
         window.dispatchEvent(new CustomEvent('navigate', { detail: 'dashboard' }));
       }
     }
