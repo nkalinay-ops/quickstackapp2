@@ -16,47 +16,63 @@ export function ResetPassword() {
   const [exchangeError, setExchangeError] = useState('');
 
   useEffect(() => {
-    let recoveryConfirmed = false;
+    let settled = false;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event) => {
-        console.log('Auth event:', event);
-        if (event === 'PASSWORD_RECOVERY') {
-          recoveryConfirmed = true;
-          window.history.replaceState({}, '', '/?page=reset-password');
-          setExchangeError('');
-          setExchanging(false);
-        }
-      }
-    );
-
-    const checkSession = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const isResetUrl = params.has('code') || params.get('page') === 'reset-password';
-      const { data, error } = await supabase.auth.getSession();
-      console.log('Reset password getSession:', data.session, error);
-      if (data.session && isResetUrl) {
-        recoveryConfirmed = true;
-        setExchangeError('');
-        setExchanging(false);
-      }
+    const confirm = () => {
+      if (settled) return;
+      settled = true;
+      window.history.replaceState({}, '', '/?page=reset-password');
+      setExchangeError('');
+      setExchanging(false);
     };
 
-    checkSession();
+    const fail = (msg: string) => {
+      if (settled) return;
+      settled = true;
+      setExchangeError(msg);
+      setExchanging(false);
+    };
 
-    const timeout = setTimeout(async () => {
-      await checkSession();
-      if (!recoveryConfirmed) {
-        setExchangeError(
-          'This reset link has expired or already been used. Please request a new one.'
-        );
-        setExchanging(false);
+    // Primary path: explicitly exchange the PKCE code for a session.
+    // This is reliable on both desktop and mobile system browsers because it
+    // makes an immediate network call rather than waiting for the Supabase
+    // client to auto-detect and exchange the code in the background.
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+
+    if (code) {
+      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        if (error) {
+          fail('This reset link has expired or already been used. Please request a new one.');
+        } else {
+          confirm();
+        }
+      });
+    }
+
+    // Secondary path: handle cases where the Supabase client already exchanged
+    // the code before this component mounted (fast desktop connections) and
+    // fires PASSWORD_RECOVERY, or where the page was navigated to with
+    // ?page=reset-password after a previous exchange.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        confirm();
       }
-    }, 10000);
+    });
+
+    // Fallback for ?page=reset-password (no code in URL) — session already exists.
+    if (!code) {
+      supabase.auth.getSession().then(({ data }) => {
+        if (data.session) {
+          confirm();
+        } else {
+          fail('This reset link has expired or already been used. Please request a new one.');
+        }
+      });
+    }
 
     return () => {
       subscription.unsubscribe();
-      clearTimeout(timeout);
     };
   }, []);
 
