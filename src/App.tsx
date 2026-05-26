@@ -44,9 +44,9 @@ function AppContent() {
     if (!user) {
       window.history.replaceState({}, '', window.location.pathname);
       setCurrentPage('auth');
+    } else if (currentPage === 'auth') {
+      setCurrentPage('dashboard');
     }
-    // Do NOT auto-redirect a logged-in user away from 'auth' — they may have
-    // explicitly navigated there after signing out (e.g. the reset-password flow).
   }, [user, currentPage]);
 
   useEffect(() => {

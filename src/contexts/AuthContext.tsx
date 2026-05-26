@@ -162,11 +162,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error('Access denied. Please contact support if you believe this is an error.');
       }
 
-      if (session) {
-        await fetchAdminStatus(data.user.id);
-        setUser(data.user);
-        window.dispatchEvent(new CustomEvent('navigate', { detail: 'dashboard' }));
-      }
     }
     expectingSignIn.current = false;
   };
