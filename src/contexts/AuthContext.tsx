@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
@@ -25,6 +25,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [userTier, setUserTier] = useState<UserTier>('free');
+  // Ref (not state) so the onAuthStateChange closure always reads the current value.
+  // Without this guard, email confirmation in another tab fires SIGNED_IN and auto-logs in the user.
+  const expectingSignIn = useRef(false);
 
   const checkTerminationStatus = async (userId: string): Promise<boolean> => {
     const { data } = await supabase
@@ -92,6 +95,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
 
           if (session?.user) {
+            // A SIGNED_IN event that wasn't triggered by an explicit signIn() call
+            // means Supabase auto-created a session (e.g. email confirmation link clicked
+            // in another tab). Sign out immediately to prevent auto-login.
+            if (event === 'SIGNED_IN' && !expectingSignIn.current) {
+              await supabase.auth.signOut();
+              setUser(null);
+              setIsAdmin(false);
+              setUserTier('free');
+              setLoading(false);
+              return;
+            }
             const isTerminated = await checkTerminationStatus(session.user.id);
             if (isTerminated) {
               await supabase.auth.signOut();
@@ -118,8 +132,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = async (email: string, password: string) => {
+    expectingSignIn.current = true;
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
+    if (error) {
+      expectingSignIn.current = false;
+      throw error;
+    }
 
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -127,6 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Block unconfirmed users — Supabase may issue a session before confirmation
       // depending on project settings. We enforce the requirement explicitly.
       if (!data.user.email_confirmed_at) {
+        expectingSignIn.current = false;
         await supabase.auth.signOut();
         throw new Error('Please confirm your email address before signing in. Check your inbox for the confirmation link.');
       }
@@ -138,6 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .maybeSingle();
 
       if (terminationData.data) {
+        expectingSignIn.current = false;
         await supabase.auth.signOut();
         throw new Error('Access denied. Please contact support if you believe this is an error.');
       }
@@ -148,6 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         window.dispatchEvent(new CustomEvent('navigate', { detail: 'dashboard' }));
       }
     }
+    expectingSignIn.current = false;
   };
 
   const signUp = async (email: string, password: string) => {
