@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CheckCircle, AlertTriangle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -19,9 +19,14 @@ export function EmailConfirmed() {
   const [signingOut, setSigningOut] = useState(false);
   const hasError = detectConfirmationError();
 
-  const handleGoToLogin = async () => {
+  // Supabase automatically creates a session when the confirmation link is clicked.
+  // Sign out immediately on mount so the original tab does not auto-login the user.
+  useEffect(() => {
+    supabase.auth.signOut({ scope: 'global' });
+  }, []);
+
+  const handleGoToLogin = () => {
     setSigningOut(true);
-    await supabase.auth.signOut({ scope: 'global' });
     window.history.replaceState({}, '', '/');
     window.dispatchEvent(new CustomEvent('navigate', { detail: 'auth' }));
   };
