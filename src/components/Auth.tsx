@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../lib/supabase';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Mail } from 'lucide-react';
 import { PasswordStrength, validatePassword } from './PasswordStrength';
 import { openLegalLink } from '../lib/capacitorSetup';
 
@@ -9,11 +8,13 @@ export function Auth() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [betaKey, setBetaKey] = useState('');
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const { signIn } = useAuth();
+  const [pendingEmail, setPendingEmail] = useState('');
+  const { signIn, signUp } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,51 +23,20 @@ export function Auth() {
 
     try {
       if (isSignUp) {
-        if (!betaKey.trim()) {
-          setError('Beta key is required to sign up');
-          setLoading(false);
-          return;
-        }
-
         const passwordValidation = validatePassword(password);
         if (!passwordValidation.isValid) {
           setError(passwordValidation.error || 'Password does not meet requirements');
-          setLoading(false);
           return;
         }
 
-        const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/validate-beta-key`;
-        const response = await fetch(apiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify({
-            keyCode: betaKey,
-            email,
-            password,
-          }),
-        });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-          setError(result.error || 'Failed to validate beta key');
-          setLoading(false);
+        if (password !== confirmPassword) {
+          setError('Passwords do not match');
           return;
         }
 
-        if (result.session) {
-          const { error: sessionError } = await supabase.auth.setSession(result.session);
-          if (sessionError) {
-            console.error('Error setting session:', sessionError);
-            // Fall back to signing in with credentials
-            await signIn(email, password);
-          }
-        } else {
-          // No session returned, sign in directly
-          await signIn(email, password);
+        const result = await signUp(email, password);
+        if (result.needsEmailConfirmation) {
+          setPendingEmail(email);
         }
       } else {
         await signIn(email, password);
@@ -77,6 +47,48 @@ export function Auth() {
       setLoading(false);
     }
   };
+
+  const handleSwitchMode = () => {
+    setIsSignUp(!isSignUp);
+    setError('');
+    setPassword('');
+    setConfirmPassword('');
+  };
+
+  if (pendingEmail) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
+        <div className="w-full max-w-md space-y-8">
+          <div className="text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-900 rounded-full mb-4">
+              <Mail className="text-blue-400" size={32} />
+            </div>
+            <h1 className="text-3xl font-bold text-white mb-2">Check your email</h1>
+            <p className="text-gray-400 mb-2">
+              We sent a confirmation link to
+            </p>
+            <p className="font-medium text-white mb-4">{pendingEmail}</p>
+            <p className="text-sm text-gray-500 mb-8">
+              Click the link in the email to activate your account. If you don't see it, check your spam folder.
+            </p>
+          </div>
+
+          <button
+            onClick={() => {
+              setPendingEmail('');
+              setIsSignUp(false);
+              setEmail('');
+              setPassword('');
+              setConfirmPassword('');
+            }}
+            className="w-full py-3 bg-gray-800 hover:bg-gray-700 text-white font-medium rounded-lg transition-colors"
+          >
+            Back to Sign In
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
@@ -134,22 +146,28 @@ export function Auth() {
 
           {isSignUp && (
             <div>
-              <label htmlFor="betaKey" className="block text-sm font-medium text-gray-300 mb-1">
-                Beta Key
+              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-300 mb-1">
+                Confirm Password
               </label>
-              <input
-                id="betaKey"
-                type="text"
-                value={betaKey}
-                onChange={(e) => setBetaKey(e.target.value)}
-                required={isSignUp}
-                className="w-full px-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono uppercase"
-                placeholder="BETA-XXXX-XXXX-XXXX"
-                maxLength={24}
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Enter your beta key to create an account
-              </p>
+              <div className="relative">
+                <input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  className="w-full px-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 pr-12"
+                  placeholder="••••••••••••"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-300 focus:outline-none z-10 cursor-pointer"
+                  aria-label="Toggle confirm password visibility"
+                >
+                  {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
             </div>
           )}
 
@@ -164,7 +182,7 @@ export function Auth() {
             disabled={loading}
             className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Please wait...' : isSignUp ? 'Sign Up' : 'Sign In'}
+            {loading ? 'Please wait...' : isSignUp ? 'Create Account' : 'Sign In'}
           </button>
 
           <div className="space-y-2">
@@ -179,7 +197,7 @@ export function Auth() {
             )}
             <button
               type="button"
-              onClick={() => setIsSignUp(!isSignUp)}
+              onClick={handleSwitchMode}
               className="w-full text-gray-400 hover:text-white transition-colors text-sm"
             >
               {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}

@@ -10,7 +10,7 @@ type AuthContextType = {
   isAdmin: boolean;
   userTier: UserTier;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string) => Promise<{ needsEmailConfirmation: boolean }>;
   signOut: () => Promise<void>;
   refreshAdminStatus: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -144,8 +144,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({ email, password });
+    const emailRedirectTo =
+      import.meta.env.VITE_EMAIL_CONFIRM_REDIRECT_URL ||
+      `${window.location.origin}/?page=email-confirmed`;
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo },
+    });
     if (error) throw error;
+    // Supabase returns a session immediately only when email confirmation is disabled.
+    // When confirmation is required, session is null and the user must verify first.
+    return { needsEmailConfirmation: !data.session };
   };
 
   const signOut = async () => {

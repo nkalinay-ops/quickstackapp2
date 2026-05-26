@@ -13,9 +13,10 @@ import { AdminPanel } from './pages/AdminPanel';
 import { BulkUpload } from './pages/BulkUpload';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
+import { EmailConfirmed } from './pages/EmailConfirmed';
 
 type LayoutPage = 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload';
-type Page = 'auth' | 'forgot-password' | 'reset-password' | LayoutPage;
+type Page = 'auth' | 'forgot-password' | 'reset-password' | 'email-confirmed' | LayoutPage;
 
 function AppContent() {
   const { user, loading, isAdmin } = useAuth();
@@ -25,6 +26,7 @@ function AppContent() {
     if (params.get('page') === 'reset-password') return 'reset-password';
     if (params.get('code')) return 'reset-password';
     if (params.get('page') === 'forgot-password') return 'forgot-password';
+    if (params.get('page') === 'email-confirmed') return 'email-confirmed';
     return 'dashboard';
   };
 
@@ -33,7 +35,7 @@ function AppContent() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const isResetUrl = params.has('code') || params.get('page') === 'reset-password';
-    if (currentPage === 'reset-password' || currentPage === 'forgot-password' || isResetUrl) return;
+    if (currentPage === 'reset-password' || currentPage === 'forgot-password' || currentPage === 'email-confirmed' || isResetUrl) return;
 
     if (!user) {
       window.history.replaceState({}, '', window.location.pathname);
@@ -52,13 +54,17 @@ function AppContent() {
     return () => window.removeEventListener('navigate', handleNavigate);
   }, []);
 
-  // Show reset-password immediately — it handles its own code exchange
+  // These pages handle their own auth state — render outside the normal auth gate
   if (currentPage === 'reset-password') {
     return <ResetPassword />;
   }
 
   if (currentPage === 'forgot-password') {
     return <ForgotPassword />;
+  }
+
+  if (currentPage === 'email-confirmed') {
+    return <EmailConfirmed />;
   }
 
   if (loading) {
