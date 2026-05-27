@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { isNativePlatform } from '../lib/capacitorSetup';
 
 export type UserTier = 'free' | 'paid' | 'admin';
 
@@ -98,7 +99,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // A SIGNED_IN event that wasn't triggered by an explicit signIn() call
             // means Supabase auto-created a session (e.g. email confirmation link clicked
             // in another tab). Sign out immediately to prevent auto-login.
-            if (event === 'SIGNED_IN' && !expectingSignIn.current) {
+            // On native (Android/iOS) there are no other tabs, so SIGNED_IN can only
+            // mean a legitimate session restore after the app was backgrounded — skip the guard.
+            if (event === 'SIGNED_IN' && !expectingSignIn.current && !isNativePlatform()) {
               await supabase.auth.signOut();
               setUser(null);
               setIsAdmin(false);
