@@ -7,7 +7,7 @@ export interface OptimizedImage {
 
 export async function optimizeImageForOCR(
   imageDataUrl: string,
-  maxWidth: number = 1024,
+  maxWidth: number = 768,
   quality: number = 0.85
 ): Promise<OptimizedImage> {
   return new Promise((resolve, reject) => {
@@ -22,12 +22,6 @@ export async function optimizeImageForOCR(
       if (width > maxWidth) {
         height = Math.round((height * maxWidth) / width);
         width = maxWidth;
-      }
-
-      const minWidth = 800;
-      if (width < minWidth) {
-        width = minWidth;
-        height = Math.round((img.height * minWidth) / img.width);
       }
 
       canvas.width = width;
