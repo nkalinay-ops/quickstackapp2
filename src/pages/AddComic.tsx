@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase, Comic } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { CheckCircle2, Plus, Camera, Scan, X, AlertTriangle, Zap, Library, Heart, ScanLine } from 'lucide-react';
@@ -47,7 +47,7 @@ export function AddComic() {
   });
   const [monthlyScanCount, setMonthlyScanCount] = useState<number | null>(null);
   const [scanRenewalInterval, setScanRenewalInterval] = useState<'month' | 'day'>('month');
-  const [pendingScanNext, setPendingScanNext] = useState(false);
+  const pendingScanNext = useRef(false);
 
   useEffect(() => {
     if (!user || userTier !== 'free') return;
@@ -305,8 +305,8 @@ export function AddComic() {
       setSuccess(true);
       resetForm();
       setDuplicateComic(null);
-      if (pendingScanNext) {
-        setPendingScanNext(false);
+      if (pendingScanNext.current) {
+        pendingScanNext.current = false;
         setSuccess(false);
         setShowCamera(true);
       } else {
@@ -358,8 +358,8 @@ export function AddComic() {
       await insertCollectionComic();
       setSuccess(true);
       resetForm();
-      if (pendingScanNext) {
-        setPendingScanNext(false);
+      if (pendingScanNext.current) {
+        pendingScanNext.current = false;
         setSuccess(false);
         setShowCamera(true);
       } else {
@@ -367,7 +367,7 @@ export function AddComic() {
       }
     } catch (error) {
       console.error('Error adding comic:', error);
-      setPendingScanNext(false);
+      pendingScanNext.current = false;
       setAlertModal({ isOpen: true, title: 'Error', message: 'Failed to add comic', type: 'error' });
     } finally {
       setLoading(false);
@@ -403,8 +403,8 @@ export function AddComic() {
         await insertCollectionComic();
         setSuccess(true);
         resetForm();
-        if (pendingScanNext) {
-          setPendingScanNext(false);
+        if (pendingScanNext.current) {
+          pendingScanNext.current = false;
           setSuccess(false);
           setShowCamera(true);
         } else {
@@ -412,7 +412,7 @@ export function AddComic() {
         }
       } catch (error) {
         console.error('Error adding comic:', error);
-        setPendingScanNext(false);
+        pendingScanNext.current = false;
         setAlertModal({ isOpen: true, title: 'Error', message: 'Failed to add comic', type: 'error' });
       } finally {
         setLoading(false);
@@ -864,8 +864,7 @@ export function AddComic() {
             type="button"
             disabled={loading || !series.trim()}
             onClick={() => {
-              setPendingScanNext(true);
-              // Programmatically submit the form by triggering the same logic
+              pendingScanNext.current = true;
               const form = document.getElementById('add-comic-form') as HTMLFormElement | null;
               form?.requestSubmit();
             }}
