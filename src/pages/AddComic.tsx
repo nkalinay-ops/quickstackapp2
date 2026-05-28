@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase, Comic } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { CheckCircle2, Plus, Camera, Scan, X, AlertTriangle, Zap, Library, Heart } from 'lucide-react';
+import { CheckCircle2, Plus, Camera, Scan, X, AlertTriangle, Zap, Library, Heart, ScanLine } from 'lucide-react';
 import { CameraCapture } from '../components/CameraCapture';
 import { optimizeImageForOCR } from '../utils/imageOptimizer';
 import DuplicateModal from '../components/DuplicateModal';
@@ -47,6 +47,7 @@ export function AddComic() {
   });
   const [monthlyScanCount, setMonthlyScanCount] = useState<number | null>(null);
   const [scanRenewalInterval, setScanRenewalInterval] = useState<'month' | 'day'>('month');
+  const [pendingScanNext, setPendingScanNext] = useState(false);
 
   useEffect(() => {
     if (!user || userTier !== 'free') return;
@@ -304,7 +305,13 @@ export function AddComic() {
       setSuccess(true);
       resetForm();
       setDuplicateComic(null);
-      setTimeout(() => setSuccess(false), 3000);
+      if (pendingScanNext) {
+        setPendingScanNext(false);
+        setSuccess(false);
+        setShowCamera(true);
+      } else {
+        setTimeout(() => setSuccess(false), 3000);
+      }
     } catch (error) {
       console.error('Error updating copy count:', error);
       setAlertModal({ isOpen: true, title: 'Error', message: 'Failed to update copy count', type: 'error' });
@@ -351,9 +358,16 @@ export function AddComic() {
       await insertCollectionComic();
       setSuccess(true);
       resetForm();
-      setTimeout(() => setSuccess(false), 2000);
+      if (pendingScanNext) {
+        setPendingScanNext(false);
+        setSuccess(false);
+        setShowCamera(true);
+      } else {
+        setTimeout(() => setSuccess(false), 2000);
+      }
     } catch (error) {
       console.error('Error adding comic:', error);
+      setPendingScanNext(false);
       setAlertModal({ isOpen: true, title: 'Error', message: 'Failed to add comic', type: 'error' });
     } finally {
       setLoading(false);
@@ -389,9 +403,16 @@ export function AddComic() {
         await insertCollectionComic();
         setSuccess(true);
         resetForm();
-        setTimeout(() => setSuccess(false), 2000);
+        if (pendingScanNext) {
+          setPendingScanNext(false);
+          setSuccess(false);
+          setShowCamera(true);
+        } else {
+          setTimeout(() => setSuccess(false), 2000);
+        }
       } catch (error) {
         console.error('Error adding comic:', error);
+        setPendingScanNext(false);
         setAlertModal({ isOpen: true, title: 'Error', message: 'Failed to add comic', type: 'error' });
       } finally {
         setLoading(false);
@@ -625,7 +646,7 @@ export function AddComic() {
       )}
 
       {/* Form */}
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form id="add-comic-form" onSubmit={handleSubmit} className="space-y-4">
         {/* --- Shared fields --- */}
         <div>
           <label htmlFor="series" className="block text-sm font-medium text-gray-300 mb-1">
@@ -837,6 +858,23 @@ export function AddComic() {
             </>
           )}
         </button>
+
+        {mode === 'collection' && !scanLimitReached && (
+          <button
+            type="button"
+            disabled={loading || !series.trim()}
+            onClick={() => {
+              setPendingScanNext(true);
+              // Programmatically submit the form by triggering the same logic
+              const form = document.getElementById('add-comic-form') as HTMLFormElement | null;
+              form?.requestSubmit();
+            }}
+            className="w-full py-3 bg-transparent border border-gray-700 hover:border-gray-500 text-gray-300 hover:text-white font-medium rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            <ScanLine size={20} />
+            Save &amp; Scan Next
+          </button>
+        )}
       </form>
 
       {duplicateComic && (
