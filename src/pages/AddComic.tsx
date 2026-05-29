@@ -374,6 +374,12 @@ export function AddComic() {
     }
   };
 
+  const handleCloseDuplicateModal = () => {
+    setShowDuplicateModal(false);
+    setDuplicateComic(null);
+    // capturedImage and form fields are preserved so the user can still act
+  };
+
   const handleDiscardScan = () => {
     setShowDuplicateModal(false);
     setDuplicateComic(null);
@@ -879,7 +885,8 @@ export function AddComic() {
       {duplicateComic && (
         <DuplicateModal
           isOpen={showDuplicateModal}
-          onClose={handleDiscardScan}
+          onClose={handleCloseDuplicateModal}
+          onDiscard={handleDiscardScan}
           existingComic={duplicateComic}
           newComicImage={capturedImage}
           onIncreaseCopyCount={handleIncreaseCopyCount}
