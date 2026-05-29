@@ -49,6 +49,7 @@ export function AddComic() {
   const [scanRenewalInterval, setScanRenewalInterval] = useState<'month' | 'day'>('month');
   const pendingScanNext = useRef(false);
   const scanButtonRef = useRef<HTMLButtonElement>(null);
+  const seriesInputRef = useRef<HTMLInputElement>(null);
 
   const focusScanButton = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -189,6 +190,8 @@ export function AddComic() {
           if (duplicate) {
             setDuplicateComic(duplicate);
             setShowDuplicateModal(true);
+          } else {
+            seriesInputRef.current?.focus();
           }
         } else if (!scannedSeries && !scannedIssue) {
           setAlertModal({
@@ -197,6 +200,8 @@ export function AddComic() {
             message: 'Could not extract all details from the image. Please review and fill in any missing information.',
             type: 'info',
           });
+        } else {
+          seriesInputRef.current?.focus();
         }
       } else {
         setAlertModal({
@@ -674,6 +679,7 @@ export function AddComic() {
             Series <span className="text-red-400">*</span>
           </label>
           <input
+            ref={seriesInputRef}
             id="series"
             type="text"
             value={series}
