@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { LogOut, User, Mail, Lock, Eye, EyeOff, Trash2, AlertTriangle, ExternalLink } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import type { OcrCorrectionRule } from '../lib/supabase';
+import { LogOut, User, Mail, Lock, Eye, EyeOff, Trash2, AlertTriangle, ExternalLink, Wand2, ChevronDown, ChevronUp } from 'lucide-react';
 import { PasswordStrength, validatePassword } from '../components/PasswordStrength';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { AlertModal } from '../components/AlertModal';
@@ -28,6 +30,64 @@ export function Settings() {
     message: string;
     type?: 'error' | 'success' | 'info';
   }>({ isOpen: false, message: '' });
+
+  // Scan rules state
+  const [scanRulesOpen, setScanRulesOpen] = useState(false);
+  const [correctionRules, setCorrectionRules] = useState<OcrCorrectionRule[]>([]);
+  const [pendingRules, setPendingRules] = useState<OcrCorrectionRule[]>([]);
+  const [correctionThreshold, setCorrectionThreshold] = useState(3);
+  const [thresholdSaving, setThresholdSaving] = useState(false);
+  const [rulesLoading, setRulesLoading] = useState(false);
+
+  useEffect(() => {
+    if (!scanRulesOpen || !user) return;
+    loadScanRulesData();
+  }, [scanRulesOpen, user]);
+
+  const loadScanRulesData = async () => {
+    if (!user) return;
+    setRulesLoading(true);
+    const [rulesRes, prefsRes] = await Promise.all([
+      supabase
+        .from('ocr_correction_rules')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false }),
+      supabase
+        .from('user_scan_preferences')
+        .select('correction_threshold')
+        .eq('user_id', user.id)
+        .maybeSingle(),
+    ]);
+    if (rulesRes.data) {
+      setCorrectionRules((rulesRes.data as OcrCorrectionRule[]).filter(r => r.is_confirmed));
+      setPendingRules((rulesRes.data as OcrCorrectionRule[]).filter(r => !r.is_confirmed));
+    }
+    if (prefsRes.data) setCorrectionThreshold(prefsRes.data.correction_threshold);
+    setRulesLoading(false);
+  };
+
+  const handleConfirmRule = async (rule: OcrCorrectionRule) => {
+    await supabase
+      .from('ocr_correction_rules')
+      .update({ is_confirmed: true, dismissed_at: null, updated_at: new Date().toISOString() })
+      .eq('id', rule.id);
+    await loadScanRulesData();
+  };
+
+  const handleDeleteRule = async (rule: OcrCorrectionRule) => {
+    await supabase.from('ocr_correction_rules').delete().eq('id', rule.id);
+    await loadScanRulesData();
+  };
+
+  const handleSaveThreshold = async () => {
+    if (!user) return;
+    setThresholdSaving(true);
+    await supabase
+      .from('user_scan_preferences')
+      .upsert({ user_id: user.id, correction_threshold: correctionThreshold, updated_at: new Date().toISOString() });
+    setThresholdSaving(false);
+  };
 
   const handleSignOut = async () => {
     try {
@@ -216,6 +276,129 @@ export function Settings() {
               {passwordLoading ? 'Updating...' : 'Update Password'}
             </button>
           </form>
+        </div>
+
+        <div className="bg-gray-900 rounded-lg border border-gray-800 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setScanRulesOpen(o => !o)}
+            className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-800/50 transition-colors"
+          >
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Wand2 size={20} />
+              Scan Correction Rules
+            </h2>
+            {scanRulesOpen ? <ChevronUp size={18} className="text-gray-400" /> : <ChevronDown size={18} className="text-gray-400" />}
+          </button>
+
+          {scanRulesOpen && (
+            <div className="px-4 pb-4 space-y-5 border-t border-gray-800 pt-4">
+              <p className="text-sm text-gray-400">
+                QuickStack learns when you repeatedly correct OCR scan results and can apply those corrections automatically. Rules only activate once you confirm them.
+              </p>
+
+              {/* Threshold setting */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Suggestion threshold
+                  <span className="ml-2 text-xs text-gray-500 font-normal">corrections before a rule is suggested</span>
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min={2}
+                    max={10}
+                    value={correctionThreshold}
+                    onChange={e => setCorrectionThreshold(Math.min(10, Math.max(2, parseInt(e.target.value) || 2)))}
+                    className="w-20 px-3 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-center"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveThreshold}
+                    disabled={thresholdSaving}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {thresholdSaving ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+
+              {rulesLoading ? (
+                <p className="text-sm text-gray-500">Loading rules...</p>
+              ) : (
+                <>
+                  {/* Active confirmed rules */}
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-300 mb-2">Active rules</h3>
+                    {correctionRules.length === 0 ? (
+                      <p className="text-sm text-gray-500 bg-gray-800/50 rounded-lg px-3 py-3">
+                        No active rules yet. They appear here once you confirm a suggestion.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {correctionRules.map(rule => (
+                          <div key={rule.id} className="flex items-center gap-3 bg-gray-800 rounded-lg px-3 py-2.5">
+                            <div className="flex-1 min-w-0 text-sm">
+                              <span className="text-gray-400">"{rule.ocr_series}{rule.ocr_story ? ` / ${rule.ocr_story}` : ''}"</span>
+                              <span className="text-gray-600 mx-2">&rarr;</span>
+                              <span className="text-white font-medium">"{rule.corrected_series}{rule.corrected_story ? ` / ${rule.corrected_story}` : ''}"</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteRule(rule)}
+                              className="text-gray-500 hover:text-red-400 transition-colors shrink-0"
+                              aria-label="Delete rule"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Pending / unconfirmed patterns */}
+                  {pendingRules.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-300 mb-2">
+                        Pending patterns
+                        <span className="ml-2 text-xs text-gray-500 font-normal">seen but not yet confirmed</span>
+                      </h3>
+                      <div className="space-y-2">
+                        {pendingRules.map(rule => (
+                          <div key={rule.id} className="flex items-center gap-3 bg-gray-800/60 border border-gray-700 rounded-lg px-3 py-2.5">
+                            <div className="flex-1 min-w-0 text-sm">
+                              <span className="text-gray-400">"{rule.ocr_series}{rule.ocr_story ? ` / ${rule.ocr_story}` : ''}"</span>
+                              <span className="text-gray-600 mx-2">&rarr;</span>
+                              <span className="text-gray-200">"{rule.corrected_series}{rule.corrected_story ? ` / ${rule.corrected_story}` : ''}"</span>
+                              <span className="ml-2 text-xs text-gray-500">{rule.occurrence_count}x</span>
+                            </div>
+                            <div className="flex gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleConfirmRule(rule)}
+                                className="text-xs bg-blue-700 hover:bg-blue-600 text-white px-2.5 py-1 rounded-md font-medium transition-colors"
+                              >
+                                Confirm
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteRule(rule)}
+                                className="text-gray-500 hover:text-red-400 transition-colors"
+                                aria-label="Delete pattern"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="bg-gray-900 rounded-lg p-4 border border-gray-800">

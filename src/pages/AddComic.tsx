@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { supabase, Comic } from '../lib/supabase';
+import { supabase, Comic, OcrCorrectionRule } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { CheckCircle2, Plus, Camera, Scan, X, AlertTriangle, Zap, Library, Heart, ScanLine } from 'lucide-react';
+import { CheckCircle2, Plus, Camera, Scan, X, AlertTriangle, Zap, Library, Heart, ScanLine, Wand2 } from 'lucide-react';
 import { CameraCapture } from '../components/CameraCapture';
 import { optimizeImageForOCR } from '../utils/imageOptimizer';
 import DuplicateModal from '../components/DuplicateModal';
@@ -47,6 +47,10 @@ export function AddComic() {
   });
   const [monthlyScanCount, setMonthlyScanCount] = useState<number | null>(null);
   const [scanRenewalInterval, setScanRenewalInterval] = useState<'month' | 'day'>('month');
+  // OCR correction rule engine
+  const [scannedRaw, setScannedRaw] = useState<{ series: string; story: string } | null>(null);
+  const [pendingRuleSuggestion, setPendingRuleSuggestion] = useState<OcrCorrectionRule | null>(null);
+  const [appliedRuleBanner, setAppliedRuleBanner] = useState<OcrCorrectionRule | null>(null);
   const pendingScanNext = useRef(false);
   const scanButtonRef = useRef<HTMLButtonElement>(null);
   const seriesInputRef = useRef<HTMLInputElement>(null);
@@ -85,6 +89,9 @@ export function AddComic() {
     setTotalIssuesConflict(false);
     setCapturedImage(null);
     setPriority('Medium');
+    setScannedRaw(null);
+    setPendingRuleSuggestion(null);
+    setAppliedRuleBanner(null);
   };
 
   const switchMode = (newMode: Mode) => {
@@ -116,6 +123,9 @@ export function AddComic() {
     setShowCamera(false);
     setCapturedImage(imageDataUrl);
     setScanning(true);
+    setScannedRaw(null);
+    setAppliedRuleBanner(null);
+    setPendingRuleSuggestion(null);
 
     try {
       const optimized = await optimizeImageForOCR(imageDataUrl);
@@ -165,11 +175,34 @@ export function AddComic() {
         if (result.scan_info && userTier === 'free') {
           setMonthlyScanCount(result.scan_info.monthly_scan_count ?? null);
         }
-        const scannedSeries = result.data.series || '';
+        const rawSeries = result.data.series || '';
+        const rawStory = result.data.story || '';
         const scannedIssue = result.data.issue_number || '';
 
-        setSeries(scannedSeries);
-        setStory(result.data.story || '');
+        // Store the raw OCR output so we can detect user corrections later
+        setScannedRaw({ series: rawSeries, story: rawStory });
+
+        // Check for a confirmed correction rule matching this OCR output
+        let appliedSeries = rawSeries;
+        let appliedStory = rawStory;
+        if (user && rawSeries) {
+          const { data: rule } = await supabase
+            .from('ocr_correction_rules')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('is_confirmed', true)
+            .ilike('ocr_series', rawSeries)
+            .ilike('ocr_story', rawStory)
+            .maybeSingle();
+          if (rule) {
+            appliedSeries = rule.corrected_series;
+            appliedStory = rule.corrected_story;
+            setAppliedRuleBanner(rule as OcrCorrectionRule);
+          }
+        }
+
+        setSeries(appliedSeries);
+        setStory(appliedStory);
         setIssueNumber(scannedIssue);
         setPublisher(result.data.publisher || '');
         setYear(result.data.year ? result.data.year.toString() : '');
@@ -178,14 +211,14 @@ export function AddComic() {
         setCoverVariant(result.data.cover_variant ? result.data.cover_variant.toString() : '');
 
         if (scannedTotal && result.data.story !== undefined) {
-          const conflict = await checkTotalIssuesConflict(result.data.series || '', result.data.story || '', scannedTotal);
+          const conflict = await checkTotalIssuesConflict(appliedSeries, appliedStory, scannedTotal);
           setTotalIssuesConflict(conflict);
         }
 
         // Only check duplicates when in collection mode
-        if (mode === 'collection' && scannedSeries && scannedIssue) {
+        if (mode === 'collection' && appliedSeries && scannedIssue) {
           setCheckingDuplicate(true);
-          const duplicate = await checkForDuplicates(scannedSeries, scannedIssue, result.data.story || '');
+          const duplicate = await checkForDuplicates(appliedSeries, scannedIssue, appliedStory);
           setCheckingDuplicate(false);
           if (duplicate) {
             setDuplicateComic(duplicate);
@@ -193,7 +226,7 @@ export function AddComic() {
           } else {
             seriesInputRef.current?.focus();
           }
-        } else if (!scannedSeries && !scannedIssue) {
+        } else if (!appliedSeries && !scannedIssue) {
           setAlertModal({
             isOpen: true,
             title: 'Incomplete Scan',
@@ -331,7 +364,7 @@ export function AddComic() {
     }
   };
 
-  const insertCollectionComic = async (imageSnapshot: string | null) => {
+  const insertCollectionComic = async (imageSnapshot: string | null, seriesVal: string, storyVal: string, issueVal: string, publisherVal: string, yearVal: string, conditionVal: string, notesVal: string, totalIssuesVal: string, coverVariantVal: string) => {
     let colorImageUrl: string | null = null;
     let bwImageUrl: string | null = null;
     if (imageSnapshot) {
@@ -339,35 +372,111 @@ export function AddComic() {
       colorImageUrl = colorUrl;
       bwImageUrl = bwUrl;
     }
-    const parsedTotal = totalIssues ? parseInt(totalIssues) : null;
-    const conflict = await checkTotalIssuesConflict(series, story, parsedTotal);
+    const parsedTotal = totalIssuesVal ? parseInt(totalIssuesVal) : null;
+    const conflict = await checkTotalIssuesConflict(seriesVal, storyVal, parsedTotal);
     const { error } = await supabase.from('comics').insert({
       user_id: user!.id,
-      series: series.trim(),
-      story: story.trim(),
-      issue_number: issueNumber.trim(),
-      publisher: publisher.trim(),
-      year: year ? parseInt(year) : null,
-      condition: condition.trim(),
-      notes: notes.trim(),
+      series: seriesVal.trim(),
+      story: storyVal.trim(),
+      issue_number: issueVal.trim(),
+      publisher: publisherVal.trim(),
+      year: yearVal ? parseInt(yearVal) : null,
+      condition: conditionVal.trim(),
+      notes: notesVal.trim(),
       color_image_url: colorImageUrl,
       bw_image_url: bwImageUrl,
       copy_count: 1,
-      cover_variant: coverVariant ? parseInt(coverVariant) : null,
+      cover_variant: coverVariantVal ? parseInt(coverVariantVal) : null,
       total_issues: parsedTotal,
       total_issues_conflict: conflict || null,
     });
     if (error) throw error;
   };
 
+  const trackOcrCorrection = async (
+    raw: { series: string; story: string },
+    saved: { series: string; story: string },
+    correctionThreshold: number
+  ): Promise<OcrCorrectionRule | null> => {
+    if (!user) return null;
+    // No correction if user didn't change anything from the raw OCR output
+    const seriesChanged = raw.series.trim().toLowerCase() !== saved.series.trim().toLowerCase();
+    const storyChanged = raw.story.trim().toLowerCase() !== saved.story.trim().toLowerCase();
+    if (!seriesChanged && !storyChanged) return null;
+
+    try {
+      // Upsert: increment occurrence_count if the mapping already exists
+      const { data: existing } = await supabase
+        .from('ocr_correction_rules')
+        .select('*')
+        .eq('user_id', user.id)
+        .ilike('ocr_series', raw.series)
+        .ilike('ocr_story', raw.story)
+        .maybeSingle();
+
+      if (existing) {
+        const newCount = existing.occurrence_count + 1;
+        const { data: updated } = await supabase
+          .from('ocr_correction_rules')
+          .update({
+            corrected_series: saved.series.trim(),
+            corrected_story: saved.story.trim(),
+            occurrence_count: newCount,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existing.id)
+          .select('*')
+          .maybeSingle();
+        // Return the updated rule if it just hit the threshold and isn't confirmed yet
+        if (updated && newCount >= correctionThreshold && !updated.is_confirmed && !updated.dismissed_at) {
+          return updated as OcrCorrectionRule;
+        }
+        return null;
+      } else {
+        await supabase.from('ocr_correction_rules').insert({
+          user_id: user.id,
+          ocr_series: raw.series.trim(),
+          ocr_story: raw.story.trim(),
+          corrected_series: saved.series.trim(),
+          corrected_story: saved.story.trim(),
+          occurrence_count: 1,
+        });
+        return null;
+      }
+    } catch {
+      return null;
+    }
+  };
+
   const handleAddAsSeparate = async () => {
     const imageSnapshot = capturedImage;
+    const seriesSnap = series;
+    const storySnap = story;
+    const issueSnap = issueNumber;
+    const publisherSnap = publisher;
+    const yearSnap = year;
+    const conditionSnap = condition;
+    const notesSnap = notes;
+    const totalIssuesSnap = totalIssues;
+    const coverVariantSnap = coverVariant;
+    const rawSnap = scannedRaw;
     setShowDuplicateModal(false);
     setDuplicateComic(null);
     setLoading(true);
     setSuccess(false);
     try {
-      await insertCollectionComic(imageSnapshot);
+      await insertCollectionComic(imageSnapshot, seriesSnap, storySnap, issueSnap, publisherSnap, yearSnap, conditionSnap, notesSnap, totalIssuesSnap, coverVariantSnap);
+      // Track OCR correction after successful save
+      if (rawSnap) {
+        const { data: prefs } = await supabase
+          .from('user_scan_preferences')
+          .select('correction_threshold')
+          .eq('user_id', user!.id)
+          .maybeSingle();
+        const threshold = prefs?.correction_threshold ?? 3;
+        const suggestion = await trackOcrCorrection(rawSnap, { series: seriesSnap, story: storySnap }, threshold);
+        if (suggestion) setPendingRuleSuggestion(suggestion);
+      }
       setSuccess(true);
       resetForm();
       if (pendingScanNext.current) {
@@ -405,10 +514,20 @@ export function AddComic() {
 
     if (mode === 'collection') {
       const imageSnapshot = capturedImage;
+      const seriesSnap = series;
+      const storySnap = story;
+      const issueSnap = issueNumber;
+      const publisherSnap = publisher;
+      const yearSnap = year;
+      const conditionSnap = condition;
+      const notesSnap = notes;
+      const totalIssuesSnap = totalIssues;
+      const coverVariantSnap = coverVariant;
+      const rawSnap = scannedRaw;
       // Duplicate check before inserting into collection
-      if (series.trim() && issueNumber.trim()) {
+      if (seriesSnap.trim() && issueSnap.trim()) {
         setCheckingDuplicate(true);
-        const duplicate = await checkForDuplicates(series, issueNumber, story);
+        const duplicate = await checkForDuplicates(seriesSnap, issueSnap, storySnap);
         setCheckingDuplicate(false);
         if (duplicate) {
           setDuplicateComic(duplicate);
@@ -420,7 +539,18 @@ export function AddComic() {
       setLoading(true);
       setSuccess(false);
       try {
-        await insertCollectionComic(imageSnapshot);
+        await insertCollectionComic(imageSnapshot, seriesSnap, storySnap, issueSnap, publisherSnap, yearSnap, conditionSnap, notesSnap, totalIssuesSnap, coverVariantSnap);
+        // Track OCR correction after successful save
+        if (rawSnap) {
+          const { data: prefs } = await supabase
+            .from('user_scan_preferences')
+            .select('correction_threshold')
+            .eq('user_id', user.id)
+            .maybeSingle();
+          const threshold = prefs?.correction_threshold ?? 3;
+          const suggestion = await trackOcrCorrection(rawSnap, { series: seriesSnap, story: storySnap }, threshold);
+          if (suggestion) setPendingRuleSuggestion(suggestion);
+        }
         setSuccess(true);
         resetForm();
         if (pendingScanNext.current) {
@@ -440,13 +570,16 @@ export function AddComic() {
       }
     } else {
       // Wishlist insert
+      const seriesSnap = series;
+      const storySnap = story;
+      const rawSnap = scannedRaw;
       setLoading(true);
       setSuccess(false);
       try {
         const { error } = await supabase.from('wishlist').insert({
           user_id: user.id,
-          series: series.trim(),
-          story: story.trim(),
+          series: seriesSnap.trim(),
+          story: storySnap.trim(),
           issue_number: issueNumber.trim(),
           publisher: publisher.trim(),
           priority,
@@ -455,6 +588,17 @@ export function AddComic() {
           cover_variant: coverVariant ? parseInt(coverVariant) : null,
         });
         if (error) throw error;
+        // Also track OCR corrections for wishlist scans
+        if (rawSnap) {
+          const { data: prefs } = await supabase
+            .from('user_scan_preferences')
+            .select('correction_threshold')
+            .eq('user_id', user.id)
+            .maybeSingle();
+          const threshold = prefs?.correction_threshold ?? 3;
+          const suggestion = await trackOcrCorrection(rawSnap, { series: seriesSnap, story: storySnap }, threshold);
+          if (suggestion) setPendingRuleSuggestion(suggestion);
+        }
         setSuccess(true);
         resetForm();
         setTimeout(() => setSuccess(false), 2000);
@@ -519,6 +663,77 @@ export function AddComic() {
           Wishlist
         </button>
       </div>
+
+      {/* Applied rule banner — shown after OCR auto-corrects a value */}
+      {appliedRuleBanner && (
+        <div className="mb-4 flex items-start gap-3 bg-blue-950 border border-blue-800 rounded-lg px-4 py-3">
+          <Wand2 size={16} className="text-blue-400 mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-blue-200">
+              Auto-corrected using your saved rule: <span className="font-medium">"{appliedRuleBanner.ocr_series}{appliedRuleBanner.ocr_story ? ` / ${appliedRuleBanner.ocr_story}` : ''}"</span> &rarr; <span className="font-medium">"{appliedRuleBanner.corrected_series}{appliedRuleBanner.corrected_story ? ` / ${appliedRuleBanner.corrected_story}` : ''}"</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSeries(appliedRuleBanner.ocr_series);
+              setStory(appliedRuleBanner.ocr_story);
+              setAppliedRuleBanner(null);
+            }}
+            className="text-xs text-blue-400 hover:text-blue-200 transition-colors shrink-0 underline underline-offset-2"
+          >
+            Undo
+          </button>
+          <button
+            type="button"
+            onClick={() => setAppliedRuleBanner(null)}
+            className="text-blue-500 hover:text-blue-300 transition-colors shrink-0"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Rule suggestion banner — shown when occurrence threshold is reached */}
+      {pendingRuleSuggestion && (
+        <div className="mb-4 flex items-start gap-3 bg-amber-950 border border-amber-800 rounded-lg px-4 py-3">
+          <Wand2 size={16} className="text-amber-400 mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-amber-200 font-medium mb-0.5">Save a scan correction rule?</p>
+            <p className="text-xs text-amber-300">
+              You've corrected <span className="font-medium">"{pendingRuleSuggestion.ocr_series}{pendingRuleSuggestion.ocr_story ? ` / ${pendingRuleSuggestion.ocr_story}` : ''}"</span> to <span className="font-medium">"{pendingRuleSuggestion.corrected_series}{pendingRuleSuggestion.corrected_story ? ` / ${pendingRuleSuggestion.corrected_story}` : ''}"</span> {pendingRuleSuggestion.occurrence_count} times. QuickStack can apply this automatically from now on.
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={async () => {
+                await supabase
+                  .from('ocr_correction_rules')
+                  .update({ is_confirmed: true, updated_at: new Date().toISOString() })
+                  .eq('id', pendingRuleSuggestion.id);
+                setPendingRuleSuggestion(null);
+              }}
+              className="text-xs bg-amber-700 hover:bg-amber-600 text-white px-3 py-1.5 rounded-md font-medium transition-colors"
+            >
+              Save Rule
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                await supabase
+                  .from('ocr_correction_rules')
+                  .update({ dismissed_at: new Date().toISOString() })
+                  .eq('id', pendingRuleSuggestion.id);
+                setPendingRuleSuggestion(null);
+              }}
+              className="text-xs text-amber-500 hover:text-amber-300 transition-colors"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Scan / Camera section (collection only) */}
       {mode === 'collection' && (
