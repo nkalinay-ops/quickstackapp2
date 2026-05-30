@@ -48,6 +48,17 @@ export function AddComic() {
   const [monthlyScanCount, setMonthlyScanCount] = useState<number | null>(null);
   const [scanRenewalInterval, setScanRenewalInterval] = useState<'month' | 'day'>('month');
   const pendingScanNext = useRef(false);
+  const scanButtonRef = useRef<HTMLButtonElement>(null);
+  const seriesInputRef = useRef<HTMLInputElement>(null);
+
+  const focusScanButton = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    scanButtonRef.current?.focus();
+  };
+
+  useEffect(() => {
+    scanButtonRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     if (!user || userTier !== 'free') return;
@@ -179,6 +190,8 @@ export function AddComic() {
           if (duplicate) {
             setDuplicateComic(duplicate);
             setShowDuplicateModal(true);
+          } else {
+            seriesInputRef.current?.focus();
           }
         } else if (!scannedSeries && !scannedIssue) {
           setAlertModal({
@@ -187,6 +200,8 @@ export function AddComic() {
             message: 'Could not extract all details from the image. Please review and fill in any missing information.',
             type: 'info',
           });
+        } else {
+          seriesInputRef.current?.focus();
         }
       } else {
         setAlertModal({
@@ -310,6 +325,7 @@ export function AddComic() {
         setSuccess(false);
         setShowCamera(true);
       } else {
+        focusScanButton();
         setTimeout(() => setSuccess(false), 3000);
       }
     } catch (error) {
@@ -363,6 +379,7 @@ export function AddComic() {
         setSuccess(false);
         setShowCamera(true);
       } else {
+        focusScanButton();
         setTimeout(() => setSuccess(false), 2000);
       }
     } catch (error) {
@@ -372,6 +389,12 @@ export function AddComic() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCloseDuplicateModal = () => {
+    setShowDuplicateModal(false);
+    setDuplicateComic(null);
+    // capturedImage and form fields are preserved so the user can still act
   };
 
   const handleDiscardScan = () => {
@@ -408,6 +431,7 @@ export function AddComic() {
           setSuccess(false);
           setShowCamera(true);
         } else {
+          focusScanButton();
           setTimeout(() => setSuccess(false), 2000);
         }
       } catch (error) {
@@ -544,6 +568,7 @@ export function AddComic() {
                 </div>
               )}
               <button
+                ref={scanButtonRef}
                 type="button"
                 onClick={() => setShowCamera(true)}
                 disabled={scanning || scanLimitReached}
@@ -596,6 +621,7 @@ export function AddComic() {
                 </div>
               )}
               <button
+                ref={scanButtonRef}
                 type="button"
                 onClick={() => setShowCamera(true)}
                 disabled={scanning || scanLimitReached}
@@ -653,6 +679,7 @@ export function AddComic() {
             Series <span className="text-red-400">*</span>
           </label>
           <input
+            ref={seriesInputRef}
             id="series"
             type="text"
             value={series}
@@ -660,7 +687,6 @@ export function AddComic() {
             required
             placeholder="e.g., The Amazing Spider-Man"
             className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg"
-            autoFocus
           />
         </div>
 
@@ -879,7 +905,8 @@ export function AddComic() {
       {duplicateComic && (
         <DuplicateModal
           isOpen={showDuplicateModal}
-          onClose={handleDiscardScan}
+          onClose={handleCloseDuplicateModal}
+          onDiscard={handleDiscardScan}
           existingComic={duplicateComic}
           newComicImage={capturedImage}
           onIncreaseCopyCount={handleIncreaseCopyCount}
