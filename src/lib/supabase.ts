@@ -49,3 +49,17 @@ export type WishlistItem = {
   total_issues_conflict: boolean | null;
   created_at: string;
 };
+
+export type OcrCorrectionRule = {
+  id: string;
+  user_id: string;
+  ocr_series: string;
+  ocr_story: string;
+  corrected_series: string;
+  corrected_story: string;
+  occurrence_count: number;
+  is_confirmed: boolean;
+  dismissed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
