@@ -188,19 +188,21 @@ export function Collection() {
   // ── Derived groupings (computed from in-memory comics) ──────────────────
 
   const publisherGroups = (): PublisherGroup[] => {
-    const map = new Map<string, Set<string>>();
-    const counts = new Map<string, number>();
+    const seriesMap = new Map<string, Set<string>>();
+    const issueMap = new Map<string, Set<string>>();
     for (const c of comics) {
       const pub = c.publisher.trim() || UNKNOWN_PUBLISHER;
-      if (!map.has(pub)) map.set(pub, new Set());
-      map.get(pub)!.add(c.series);
-      counts.set(pub, (counts.get(pub) || 0) + 1);
+      if (!seriesMap.has(pub)) seriesMap.set(pub, new Set());
+      seriesMap.get(pub)!.add(c.series);
+      if (!issueMap.has(pub)) issueMap.set(pub, new Set());
+      // key by series+issue to count distinct issues across the publisher
+      if (c.issue_number.trim()) issueMap.get(pub)!.add(`${c.series}::${c.issue_number.trim()}`);
     }
-    return Array.from(map.entries())
+    return Array.from(seriesMap.entries())
       .map(([publisher, seriesSet]) => ({
         publisher,
         seriesCount: seriesSet.size,
-        issueCount: counts.get(publisher) || 0,
+        issueCount: issueMap.get(publisher)?.size || 0,
       }))
       .sort((a, b) => a.publisher.localeCompare(b.publisher));
   };
@@ -209,15 +211,16 @@ export function Collection() {
     const inPub = comics.filter(c =>
       (c.publisher.trim() || UNKNOWN_PUBLISHER) === publisher
     );
-    const map = new Map<string, Set<string>>();
-    const counts = new Map<string, number>();
+    const storyMap = new Map<string, Set<string>>();
+    const issueMap = new Map<string, Set<string>>();
     for (const c of inPub) {
-      if (!map.has(c.series)) map.set(c.series, new Set());
-      if (c.story.trim()) map.get(c.series)!.add(c.story.trim());
-      counts.set(c.series, (counts.get(c.series) || 0) + 1);
+      if (!storyMap.has(c.series)) storyMap.set(c.series, new Set());
+      if (c.story.trim()) storyMap.get(c.series)!.add(c.story.trim());
+      if (!issueMap.has(c.series)) issueMap.set(c.series, new Set());
+      if (c.issue_number.trim()) issueMap.get(c.series)!.add(c.issue_number.trim());
     }
     const withCovers = inPub.filter(c => c.color_image_url || c.bw_image_url);
-    return Array.from(map.entries())
+    return Array.from(storyMap.entries())
       .map(([series, storySet]) => {
         const candidates = withCovers.filter(c => c.series === series);
         const pick = candidates.length > 0
@@ -226,7 +229,7 @@ export function Collection() {
         return {
           series,
           storyCount: storySet.size,
-          issueCount: counts.get(series) || 0,
+          issueCount: issueMap.get(series)?.size || 0,
           coverUrl: pick ? (pick.color_image_url || pick.bw_image_url) : null,
         };
       })
@@ -235,15 +238,16 @@ export function Collection() {
 
   // All series across all publishers (for the Series browse root)
   const seriesRootGroups = (): SeriesGroup[] => {
-    const map = new Map<string, Set<string>>();
-    const counts = new Map<string, number>();
+    const storyMap = new Map<string, Set<string>>();
+    const issueMap = new Map<string, Set<string>>();
     for (const c of comics) {
-      if (!map.has(c.series)) map.set(c.series, new Set());
-      if (c.story.trim()) map.get(c.series)!.add(c.story.trim());
-      counts.set(c.series, (counts.get(c.series) || 0) + 1);
+      if (!storyMap.has(c.series)) storyMap.set(c.series, new Set());
+      if (c.story.trim()) storyMap.get(c.series)!.add(c.story.trim());
+      if (!issueMap.has(c.series)) issueMap.set(c.series, new Set());
+      if (c.issue_number.trim()) issueMap.get(c.series)!.add(c.issue_number.trim());
     }
     const withCovers = comics.filter(c => c.color_image_url || c.bw_image_url);
-    return Array.from(map.entries())
+    return Array.from(storyMap.entries())
       .map(([series, storySet]) => {
         const candidates = withCovers.filter(c => c.series === series);
         const pick = candidates.length > 0
@@ -252,7 +256,7 @@ export function Collection() {
         return {
           series,
           storyCount: storySet.size,
-          issueCount: counts.get(series) || 0,
+          issueCount: issueMap.get(series)?.size || 0,
           coverUrl: pick ? (pick.color_image_url || pick.bw_image_url) : null,
         };
       })
@@ -297,12 +301,21 @@ export function Collection() {
         list.map(c => c.issue_number.trim()).filter(n => n !== '')
       ).size || list.length;
 
+      // Deduplicate list by issue_number for range display
+      const seenIssues = new Set<string>();
+      const dedupedList = list.filter(c => {
+        const key = c.issue_number.trim();
+        if (seenIssues.has(key)) return false;
+        seenIssues.add(key);
+        return true;
+      });
+
       const isComplete = totalIssues !== null && missingIssues.length === 0 && distinctIssueCount >= totalIssues;
 
       return {
         story,
         issueCount: distinctIssueCount,
-        issueRange: issueRange(list),
+        issueRange: issueRange(dedupedList),
         coverUrl: cover ? (cover.color_image_url || cover.bw_image_url) : null,
         totalIssues,
         isComplete,
