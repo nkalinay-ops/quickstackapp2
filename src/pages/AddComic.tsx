@@ -52,6 +52,8 @@ export function AddComic() {
   const [pendingRuleSuggestion, setPendingRuleSuggestion] = useState<OcrCorrectionRule | null>(null);
   const [appliedRuleBanner, setAppliedRuleBanner] = useState<OcrCorrectionRule | null>(null);
   const pendingScanNext = useRef(false);
+  // Holds a rule suggestion across the camera transition (Scan Next flow)
+  const pendingRuleSuggestionRef = useRef<OcrCorrectionRule | null>(null);
   const scanButtonRef = useRef<HTMLButtonElement>(null);
   const seriesInputRef = useRef<HTMLInputElement>(null);
 
@@ -90,8 +92,9 @@ export function AddComic() {
     setCapturedImage(null);
     setPriority('Medium');
     setScannedRaw(null);
-    setPendingRuleSuggestion(null);
     setAppliedRuleBanner(null);
+    // NOTE: pendingRuleSuggestion is intentionally NOT cleared here so a
+    // suggestion that was just computed survives the form reset.
   };
 
   const switchMode = (newMode: Mode) => {
@@ -125,7 +128,11 @@ export function AddComic() {
     setScanning(true);
     setScannedRaw(null);
     setAppliedRuleBanner(null);
-    setPendingRuleSuggestion(null);
+    // Restore any rule suggestion that was stashed before the camera opened (Scan Next flow)
+    const restoredSuggestion = pendingRuleSuggestionRef.current;
+    pendingRuleSuggestionRef.current = null;
+    if (restoredSuggestion) setPendingRuleSuggestion(restoredSuggestion);
+    else setPendingRuleSuggestion(null);
 
     try {
       const optimized = await optimizeImageForOCR(imageDataUrl);
@@ -399,13 +406,11 @@ export function AddComic() {
     correctionThreshold: number
   ): Promise<OcrCorrectionRule | null> => {
     if (!user) return null;
-    // No correction if user didn't change anything from the raw OCR output
     const seriesChanged = raw.series.trim().toLowerCase() !== saved.series.trim().toLowerCase();
     const storyChanged = raw.story.trim().toLowerCase() !== saved.story.trim().toLowerCase();
     if (!seriesChanged && !storyChanged) return null;
 
     try {
-      // Upsert: increment occurrence_count if the mapping already exists
       const { data: existing } = await supabase
         .from('ocr_correction_rules')
         .select('*')
@@ -427,20 +432,30 @@ export function AddComic() {
           .eq('id', existing.id)
           .select('*')
           .maybeSingle();
-        // Return the updated rule if it just hit the threshold and isn't confirmed yet
+        // Suggest whenever at or above threshold and the user hasn't confirmed or dismissed
         if (updated && newCount >= correctionThreshold && !updated.is_confirmed && !updated.dismissed_at) {
           return updated as OcrCorrectionRule;
         }
+        // Also re-surface an existing above-threshold rule that was never dismissed/confirmed
+        if (existing.occurrence_count >= correctionThreshold && !existing.is_confirmed && !existing.dismissed_at) {
+          return (updated ?? existing) as OcrCorrectionRule;
+        }
         return null;
       } else {
-        await supabase.from('ocr_correction_rules').insert({
-          user_id: user.id,
-          ocr_series: raw.series.trim(),
-          ocr_story: raw.story.trim(),
-          corrected_series: saved.series.trim(),
-          corrected_story: saved.story.trim(),
-          occurrence_count: 1,
-        });
+        const { data: inserted } = await supabase
+          .from('ocr_correction_rules')
+          .insert({
+            user_id: user.id,
+            ocr_series: raw.series.trim(),
+            ocr_story: raw.story.trim(),
+            corrected_series: saved.series.trim(),
+            corrected_story: saved.story.trim(),
+            occurrence_count: 1,
+          })
+          .select('*')
+          .maybeSingle();
+        // Edge case: threshold is 1
+        if (inserted && 1 >= correctionThreshold) return inserted as OcrCorrectionRule;
         return null;
       }
     } catch {
@@ -467,6 +482,7 @@ export function AddComic() {
     try {
       await insertCollectionComic(imageSnapshot, seriesSnap, storySnap, issueSnap, publisherSnap, yearSnap, conditionSnap, notesSnap, totalIssuesSnap, coverVariantSnap);
       // Track OCR correction after successful save
+      let suggestion: OcrCorrectionRule | null = null;
       if (rawSnap) {
         const { data: prefs } = await supabase
           .from('user_scan_preferences')
@@ -474,16 +490,19 @@ export function AddComic() {
           .eq('user_id', user!.id)
           .maybeSingle();
         const threshold = prefs?.correction_threshold ?? 3;
-        const suggestion = await trackOcrCorrection(rawSnap, { series: seriesSnap, story: storySnap }, threshold);
-        if (suggestion) setPendingRuleSuggestion(suggestion);
+        suggestion = await trackOcrCorrection(rawSnap, { series: seriesSnap, story: storySnap }, threshold);
       }
       setSuccess(true);
       resetForm();
       if (pendingScanNext.current) {
         pendingScanNext.current = false;
         setSuccess(false);
+        // Stash suggestion in ref so it survives the camera transition
+        pendingRuleSuggestionRef.current = suggestion;
         setShowCamera(true);
       } else {
+        // Restore suggestion after resetForm cleared the form but not the banner
+        if (suggestion) setPendingRuleSuggestion(suggestion);
         focusScanButton();
         setTimeout(() => setSuccess(false), 2000);
       }
@@ -541,6 +560,7 @@ export function AddComic() {
       try {
         await insertCollectionComic(imageSnapshot, seriesSnap, storySnap, issueSnap, publisherSnap, yearSnap, conditionSnap, notesSnap, totalIssuesSnap, coverVariantSnap);
         // Track OCR correction after successful save
+        let suggestion: OcrCorrectionRule | null = null;
         if (rawSnap) {
           const { data: prefs } = await supabase
             .from('user_scan_preferences')
@@ -548,16 +568,17 @@ export function AddComic() {
             .eq('user_id', user.id)
             .maybeSingle();
           const threshold = prefs?.correction_threshold ?? 3;
-          const suggestion = await trackOcrCorrection(rawSnap, { series: seriesSnap, story: storySnap }, threshold);
-          if (suggestion) setPendingRuleSuggestion(suggestion);
+          suggestion = await trackOcrCorrection(rawSnap, { series: seriesSnap, story: storySnap }, threshold);
         }
         setSuccess(true);
         resetForm();
         if (pendingScanNext.current) {
           pendingScanNext.current = false;
           setSuccess(false);
+          pendingRuleSuggestionRef.current = suggestion;
           setShowCamera(true);
         } else {
+          if (suggestion) setPendingRuleSuggestion(suggestion);
           focusScanButton();
           setTimeout(() => setSuccess(false), 2000);
         }
@@ -588,7 +609,8 @@ export function AddComic() {
           cover_variant: coverVariant ? parseInt(coverVariant) : null,
         });
         if (error) throw error;
-        // Also track OCR corrections for wishlist scans
+        // Track OCR corrections for wishlist scans too
+        let suggestion: OcrCorrectionRule | null = null;
         if (rawSnap) {
           const { data: prefs } = await supabase
             .from('user_scan_preferences')
@@ -596,11 +618,11 @@ export function AddComic() {
             .eq('user_id', user.id)
             .maybeSingle();
           const threshold = prefs?.correction_threshold ?? 3;
-          const suggestion = await trackOcrCorrection(rawSnap, { series: seriesSnap, story: storySnap }, threshold);
-          if (suggestion) setPendingRuleSuggestion(suggestion);
+          suggestion = await trackOcrCorrection(rawSnap, { series: seriesSnap, story: storySnap }, threshold);
         }
         setSuccess(true);
         resetForm();
+        if (suggestion) setPendingRuleSuggestion(suggestion);
         setTimeout(() => setSuccess(false), 2000);
       } catch (error) {
         console.error('Error adding to wishlist:', error);
