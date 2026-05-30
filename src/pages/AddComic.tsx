@@ -247,41 +247,36 @@ export function AddComic() {
     });
   };
 
-  const uploadImages = async (): Promise<{ colorUrl: string | null; bwUrl: string | null }> => {
-    if (!capturedImage || !user) return { colorUrl: null, bwUrl: null };
-    try {
-      const timestamp = Date.now();
+  const uploadImages = async (imageDataUrl: string): Promise<{ colorUrl: string; bwUrl: string }> => {
+    if (!user) throw new Error('User not authenticated');
+    const timestamp = Date.now();
 
-      const base64Data = capturedImage.split(',')[1];
-      const byteCharacters = atob(base64Data);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-      const colorBlob = new Blob([new Uint8Array(byteNumbers)], { type: 'image/jpeg' });
+    const base64Data = imageDataUrl.split(',')[1];
+    const byteCharacters = atob(base64Data);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+    const colorBlob = new Blob([new Uint8Array(byteNumbers)], { type: 'image/jpeg' });
 
-      const colorFileName = `${user.id}/${timestamp}_color.jpg`;
-      const { data: colorData, error: colorError } = await supabase.storage
-        .from('comic-covers').upload(colorFileName, colorBlob, { contentType: 'image/jpeg', upsert: false });
-      if (colorError) throw colorError;
-      const { data: colorUrlData } = supabase.storage.from('comic-covers').getPublicUrl(colorData.path);
+    const colorFileName = `${user.id}/${timestamp}_color.jpg`;
+    const { data: colorData, error: colorError } = await supabase.storage
+      .from('comic-covers').upload(colorFileName, colorBlob, { contentType: 'image/jpeg', upsert: false });
+    if (colorError) throw colorError;
+    const { data: colorUrlData } = supabase.storage.from('comic-covers').getPublicUrl(colorData.path);
 
-      const bwImageData = await convertToBlackAndWhite(capturedImage);
-      const bwBase64 = bwImageData.split(',')[1];
-      const bwChars = atob(bwBase64);
-      const bwBytes = new Array(bwChars.length);
-      for (let i = 0; i < bwChars.length; i++) bwBytes[i] = bwChars.charCodeAt(i);
-      const bwBlob = new Blob([new Uint8Array(bwBytes)], { type: 'image/jpeg' });
+    const bwImageData = await convertToBlackAndWhite(imageDataUrl);
+    const bwBase64 = bwImageData.split(',')[1];
+    const bwChars = atob(bwBase64);
+    const bwBytes = new Array(bwChars.length);
+    for (let i = 0; i < bwChars.length; i++) bwBytes[i] = bwChars.charCodeAt(i);
+    const bwBlob = new Blob([new Uint8Array(bwBytes)], { type: 'image/jpeg' });
 
-      const bwFileName = `${user.id}/${timestamp}_bw.jpg`;
-      const { data: bwData, error: bwError } = await supabase.storage
-        .from('comic-covers').upload(bwFileName, bwBlob, { contentType: 'image/jpeg', upsert: false });
-      if (bwError) throw bwError;
-      const { data: bwUrlData } = supabase.storage.from('comic-covers').getPublicUrl(bwData.path);
+    const bwFileName = `${user.id}/${timestamp}_bw.jpg`;
+    const { data: bwData, error: bwError } = await supabase.storage
+      .from('comic-covers').upload(bwFileName, bwBlob, { contentType: 'image/jpeg', upsert: false });
+    if (bwError) throw bwError;
+    const { data: bwUrlData } = supabase.storage.from('comic-covers').getPublicUrl(bwData.path);
 
-      return { colorUrl: colorUrlData.publicUrl, bwUrl: bwUrlData.publicUrl };
-    } catch (error) {
-      console.error('Error uploading images:', error);
-      return { colorUrl: null, bwUrl: null };
-    }
+    return { colorUrl: colorUrlData.publicUrl, bwUrl: bwUrlData.publicUrl };
   };
 
   const checkTotalIssuesConflict = async (
@@ -336,11 +331,11 @@ export function AddComic() {
     }
   };
 
-  const insertCollectionComic = async () => {
-    let colorImageUrl = null;
-    let bwImageUrl = null;
-    if (capturedImage) {
-      const { colorUrl, bwUrl } = await uploadImages();
+  const insertCollectionComic = async (imageSnapshot: string | null) => {
+    let colorImageUrl: string | null = null;
+    let bwImageUrl: string | null = null;
+    if (imageSnapshot) {
+      const { colorUrl, bwUrl } = await uploadImages(imageSnapshot);
       colorImageUrl = colorUrl;
       bwImageUrl = bwUrl;
     }
@@ -366,12 +361,13 @@ export function AddComic() {
   };
 
   const handleAddAsSeparate = async () => {
+    const imageSnapshot = capturedImage;
     setShowDuplicateModal(false);
     setDuplicateComic(null);
     setLoading(true);
     setSuccess(false);
     try {
-      await insertCollectionComic();
+      await insertCollectionComic(imageSnapshot);
       setSuccess(true);
       resetForm();
       if (pendingScanNext.current) {
@@ -408,6 +404,7 @@ export function AddComic() {
     if (!user || !series.trim()) return;
 
     if (mode === 'collection') {
+      const imageSnapshot = capturedImage;
       // Duplicate check before inserting into collection
       if (series.trim() && issueNumber.trim()) {
         setCheckingDuplicate(true);
@@ -423,7 +420,7 @@ export function AddComic() {
       setLoading(true);
       setSuccess(false);
       try {
-        await insertCollectionComic();
+        await insertCollectionComic(imageSnapshot);
         setSuccess(true);
         resetForm();
         if (pendingScanNext.current) {
