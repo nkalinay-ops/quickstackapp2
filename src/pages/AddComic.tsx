@@ -289,7 +289,7 @@ export function AddComic() {
 
   const uploadImages = async (imageDataUrl: string): Promise<{ colorUrl: string; bwUrl: string }> => {
     if (!user) throw new Error('User not authenticated');
-    const timestamp = Date.now();
+    const fileId = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
     const base64Data = imageDataUrl.split(',')[1];
     const byteCharacters = atob(base64Data);
@@ -297,7 +297,7 @@ export function AddComic() {
     for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
     const colorBlob = new Blob([new Uint8Array(byteNumbers)], { type: 'image/jpeg' });
 
-    const colorFileName = `${user.id}/${timestamp}_color.jpg`;
+    const colorFileName = `${user.id}/${fileId}_color.jpg`;
     const { data: colorData, error: colorError } = await supabase.storage
       .from('comic-covers').upload(colorFileName, colorBlob, { contentType: 'image/jpeg', upsert: false });
     if (colorError) throw colorError;
@@ -310,10 +310,14 @@ export function AddComic() {
     for (let i = 0; i < bwChars.length; i++) bwBytes[i] = bwChars.charCodeAt(i);
     const bwBlob = new Blob([new Uint8Array(bwBytes)], { type: 'image/jpeg' });
 
-    const bwFileName = `${user.id}/${timestamp}_bw.jpg`;
+    const bwFileName = `${user.id}/${fileId}_bw.jpg`;
     const { data: bwData, error: bwError } = await supabase.storage
       .from('comic-covers').upload(bwFileName, bwBlob, { contentType: 'image/jpeg', upsert: false });
-    if (bwError) throw bwError;
+    if (bwError) {
+      // Clean up the color file already uploaded so we don't leave orphaned storage objects
+      await supabase.storage.from('comic-covers').remove([colorFileName]);
+      throw bwError;
+    }
     const { data: bwUrlData } = supabase.storage.from('comic-covers').getPublicUrl(bwData.path);
 
     return { colorUrl: colorUrlData.publicUrl, bwUrl: bwUrlData.publicUrl };
@@ -372,6 +376,7 @@ export function AddComic() {
   };
 
   const insertCollectionComic = async (imageSnapshot: string | null, seriesVal: string, storyVal: string, issueVal: string, publisherVal: string, yearVal: string, conditionVal: string, notesVal: string, totalIssuesVal: string, coverVariantVal: string) => {
+    if (!user) throw new Error('User not authenticated');
     let colorImageUrl: string | null = null;
     let bwImageUrl: string | null = null;
     if (imageSnapshot) {
@@ -382,7 +387,7 @@ export function AddComic() {
     const parsedTotal = totalIssuesVal ? parseInt(totalIssuesVal) : null;
     const conflict = await checkTotalIssuesConflict(seriesVal, storyVal, parsedTotal);
     const { error } = await supabase.from('comics').insert({
-      user_id: user!.id,
+      user_id: user.id,
       series: seriesVal.trim(),
       story: storyVal.trim(),
       issue_number: issueVal.trim(),
