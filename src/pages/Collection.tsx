@@ -435,6 +435,8 @@ export function Collection() {
           cover_variant: editedComic.cover_variant,
           total_issues: editedComic.total_issues,
           total_issues_conflict: editedComic.total_issues_conflict,
+          purchase_price: editedComic.purchase_price,
+          purchase_date: editedComic.purchase_date,
         })
         .eq('id', editedComic.id);
       if (error) throw error;
@@ -737,6 +739,53 @@ export function Collection() {
             ) : (
               <div className="text-lg">{displayComic.notes || '-'}</div>
             )}
+          </div>
+
+          {/* Purchase Info */}
+          <div className="border-t border-gray-800 pt-4">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Purchase Info</div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="text-sm text-gray-400 mb-1">Price Paid (USD)</div>
+                {isEditing ? (
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={displayComic.purchase_price ?? ''}
+                      onChange={(e) => setEditedComic({ ...displayComic, purchase_price: e.target.value ? parseFloat(e.target.value) : null })}
+                      placeholder="0.00"
+                      className="w-full pl-7 pr-3 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                ) : (
+                  <div className="text-lg">
+                    {displayComic.purchase_price != null
+                      ? `$${displayComic.purchase_price.toFixed(2)}`
+                      : '-'}
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="text-sm text-gray-400 mb-1">Purchase Date</div>
+                {isEditing ? (
+                  <input
+                    type="date"
+                    value={displayComic.purchase_date ?? ''}
+                    onChange={(e) => setEditedComic({ ...displayComic, purchase_date: e.target.value || null })}
+                    className="w-full px-3 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
+                  />
+                ) : (
+                  <div className="text-lg">
+                    {displayComic.purchase_date
+                      ? new Date(displayComic.purchase_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })
+                      : '-'}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
