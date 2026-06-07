@@ -741,6 +741,13 @@ export function Collection() {
             )}
           </div>
 
+          <div>
+            <div className="text-sm text-gray-400 mb-1">Date Added to Collection</div>
+            <div className="text-lg">
+              {new Date(displayComic.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+            </div>
+          </div>
+
           {/* Purchase Info */}
           <div className="border-t border-gray-800 pt-4">
             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Purchase Info</div>

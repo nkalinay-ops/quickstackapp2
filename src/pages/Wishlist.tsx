@@ -164,6 +164,9 @@ export function Wishlist() {
                     {item.notes && (
                       <div className="text-xs text-gray-500 mt-1">{item.notes}</div>
                     )}
+                    <div className="text-xs text-gray-600 mt-1">
+                      Added {new Date(item.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                    </div>
                   </div>
                   <span
                     className={`${
