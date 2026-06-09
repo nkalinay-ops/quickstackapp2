@@ -1,0 +1,3 @@
+ALTER TABLE comics
+  ADD COLUMN IF NOT EXISTS purchase_price NUMERIC(10, 2),
+  ADD COLUMN IF NOT EXISTS purchase_date DATE;

@@ -31,6 +31,8 @@ export type Comic = {
   cover_variant: number | null;
   total_issues: number | null;
   total_issues_conflict: boolean | null;
+  purchase_price: number | null;
+  purchase_date: string | null;
   created_at: string;
   updated_at: string;
 };

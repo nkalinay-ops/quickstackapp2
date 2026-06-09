@@ -27,6 +27,8 @@ export function AddComic() {
   // Collection-only fields
   const [year, setYear] = useState('');
   const [condition, setCondition] = useState('');
+  const [purchasePrice, setPurchasePrice] = useState('');
+  const [purchaseDate, setPurchaseDate] = useState('');
 
   // Wishlist-only fields
   const [priority, setPriority] = useState('Medium');
@@ -85,6 +87,8 @@ export function AddComic() {
     setPublisher('');
     setYear('');
     setCondition('');
+    setPurchasePrice('');
+    setPurchaseDate('');
     setNotes('');
     setTotalIssues('');
     setCoverVariant('');
@@ -375,7 +379,7 @@ export function AddComic() {
     }
   };
 
-  const insertCollectionComic = async (imageSnapshot: string | null, seriesVal: string, storyVal: string, issueVal: string, publisherVal: string, yearVal: string, conditionVal: string, notesVal: string, totalIssuesVal: string, coverVariantVal: string) => {
+  const insertCollectionComic = async (imageSnapshot: string | null, seriesVal: string, storyVal: string, issueVal: string, publisherVal: string, yearVal: string, conditionVal: string, notesVal: string, totalIssuesVal: string, coverVariantVal: string, purchasePriceVal: string, purchaseDateVal: string) => {
     if (!user) throw new Error('User not authenticated');
     let colorImageUrl: string | null = null;
     let bwImageUrl: string | null = null;
@@ -401,6 +405,8 @@ export function AddComic() {
       cover_variant: coverVariantVal ? parseInt(coverVariantVal) : null,
       total_issues: parsedTotal,
       total_issues_conflict: conflict || null,
+      purchase_price: purchasePriceVal ? parseFloat(purchasePriceVal) : null,
+      purchase_date: purchaseDateVal || null,
     });
     if (error) throw error;
   };
@@ -479,13 +485,15 @@ export function AddComic() {
     const notesSnap = notes;
     const totalIssuesSnap = totalIssues;
     const coverVariantSnap = coverVariant;
+    const purchasePriceSnap = purchasePrice;
+    const purchaseDateSnap = purchaseDate;
     const rawSnap = scannedRaw;
     setShowDuplicateModal(false);
     setDuplicateComic(null);
     setLoading(true);
     setSuccess(false);
     try {
-      await insertCollectionComic(imageSnapshot, seriesSnap, storySnap, issueSnap, publisherSnap, yearSnap, conditionSnap, notesSnap, totalIssuesSnap, coverVariantSnap);
+      await insertCollectionComic(imageSnapshot, seriesSnap, storySnap, issueSnap, publisherSnap, yearSnap, conditionSnap, notesSnap, totalIssuesSnap, coverVariantSnap, purchasePriceSnap, purchaseDateSnap);
       // Track OCR correction after successful save
       let suggestion: OcrCorrectionRule | null = null;
       if (rawSnap) {
@@ -547,6 +555,8 @@ export function AddComic() {
       const notesSnap = notes;
       const totalIssuesSnap = totalIssues;
       const coverVariantSnap = coverVariant;
+      const purchasePriceSnap = purchasePrice;
+      const purchaseDateSnap = purchaseDate;
       const rawSnap = scannedRaw;
       // Duplicate check before inserting into collection
       if (seriesSnap.trim() && issueSnap.trim()) {
@@ -563,7 +573,7 @@ export function AddComic() {
       setLoading(true);
       setSuccess(false);
       try {
-        await insertCollectionComic(imageSnapshot, seriesSnap, storySnap, issueSnap, publisherSnap, yearSnap, conditionSnap, notesSnap, totalIssuesSnap, coverVariantSnap);
+        await insertCollectionComic(imageSnapshot, seriesSnap, storySnap, issueSnap, publisherSnap, yearSnap, conditionSnap, notesSnap, totalIssuesSnap, coverVariantSnap, purchasePriceSnap, purchaseDateSnap);
         // Track OCR correction after successful save
         let suggestion: OcrCorrectionRule | null = null;
         if (rawSnap) {
@@ -1053,7 +1063,44 @@ export function AddComic() {
                 ))}
               </div>
             </div>
-          </>
+
+            {/* Purchase Info subsection */}
+            <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
+              <p className="text-sm font-semibold text-gray-400 uppercase tracking-wide">Purchase Info <span className="text-gray-600 font-normal normal-case">(optional)</span></p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="purchasePrice" className="block text-sm font-medium text-gray-300 mb-1">
+                    Price (USD)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                    <input
+                      id="purchasePrice"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={purchasePrice}
+                      onChange={(e) => setPurchasePrice(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full pl-7 pr-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="purchaseDate" className="block text-sm font-medium text-gray-300 mb-1">
+                    Purchase Date
+                  </label>
+                  <input
+                    id="purchaseDate"
+                    type="date"
+                    value={purchaseDate}
+                    onChange={(e) => setPurchaseDate(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+</>
         )}
 
         {/* --- Wishlist-specific fields --- */}
