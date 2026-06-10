@@ -19,6 +19,8 @@ interface ComicRow {
   copy_count?: string | number;
   cover_variant?: string | number;
   total_issues?: string | number;
+  purchase_price?: string | number;
+  purchase_date?: string;
 }
 
 interface ProcessRequest {
@@ -38,6 +40,8 @@ interface ValidatedRow {
   copyCountValue: number;
   coverVariantValue: number | null;
   totalIssuesValue: number | null;
+  purchasePriceValue: number | null;
+  purchaseDateValue: string | null;
 }
 
 interface ErrorEntry {
@@ -170,6 +174,49 @@ function validateRow(
     totalIssuesValue = parsed;
   }
 
+  let purchasePriceValue: number | null = null;
+  if (row.purchase_price !== undefined && row.purchase_price !== "") {
+    const parsed =
+      typeof row.purchase_price === "string"
+        ? parseFloat(row.purchase_price)
+        : row.purchase_price;
+    if (isNaN(parsed) || parsed < 0) {
+      return {
+        error: {
+          job_id: jobId,
+          row_number: rowNumber,
+          error_type: "validation",
+          error_message: `Purchase Price must be a non-negative number (found: ${row.purchase_price})`,
+          row_data: row,
+        },
+      };
+    }
+    purchasePriceValue = Math.round(parsed * 100) / 100;
+  }
+
+  let purchaseDateValue: string | null = null;
+  if (row.purchase_date && String(row.purchase_date).trim() !== "") {
+    const dateStr = String(row.purchase_date).trim();
+    // Accept YYYY-MM-DD or MM/DD/YYYY
+    const isoMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const usMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (isoMatch) {
+      purchaseDateValue = dateStr;
+    } else if (usMatch) {
+      purchaseDateValue = `${usMatch[3]}-${usMatch[1].padStart(2, "0")}-${usMatch[2].padStart(2, "0")}`;
+    } else {
+      return {
+        error: {
+          job_id: jobId,
+          row_number: rowNumber,
+          error_type: "validation",
+          error_message: `Purchase Date must be YYYY-MM-DD or MM/DD/YYYY (found: ${row.purchase_date})`,
+          row_data: row,
+        },
+      };
+    }
+  }
+
   return {
     valid: {
       rowNumber,
@@ -183,6 +230,8 @@ function validateRow(
       copyCountValue,
       coverVariantValue,
       totalIssuesValue,
+      purchasePriceValue,
+      purchaseDateValue,
     },
   };
 }
@@ -353,6 +402,8 @@ Deno.serve(async (req: Request) => {
         copy_count: r.copyCountValue,
         cover_variant: r.coverVariantValue,
         total_issues: r.totalIssuesValue,
+        purchase_price: r.purchasePriceValue,
+        purchase_date: r.purchaseDateValue,
       }));
 
       const { error: insertError } = await serviceClient
@@ -378,6 +429,8 @@ Deno.serve(async (req: Request) => {
               copy_count: r.copyCountValue,
               cover_variant: r.coverVariantValue,
               total_issues: r.totalIssuesValue,
+              purchase_price: r.purchasePriceValue,
+              purchase_date: r.purchaseDateValue,
             });
 
           if (singleErr) {
