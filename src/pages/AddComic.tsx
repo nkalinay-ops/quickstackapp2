@@ -224,31 +224,10 @@ export function AddComic() {
           setPurchasePrice(result.data.cover_price.toFixed(2));
         }
 
-        const shouldCheckConflict = scannedTotal != null && result.data.story !== undefined;
-        const shouldCheckDuplicate = mode === 'collection' && !!appliedSeries && !!scannedIssue;
+        // Results are ready — unblock the UI immediately
+        setScanning(false);
 
-        if (shouldCheckDuplicate) setCheckingDuplicate(true);
-
-        const [conflict, duplicate] = await Promise.all([
-          shouldCheckConflict
-            ? checkTotalIssuesConflict(appliedSeries, appliedStory, scannedTotal!)
-            : Promise.resolve(false),
-          shouldCheckDuplicate
-            ? checkForDuplicates(appliedSeries, scannedIssue, appliedStory)
-            : Promise.resolve(null),
-        ]);
-
-        if (shouldCheckConflict) setTotalIssuesConflict(conflict);
-        if (shouldCheckDuplicate) setCheckingDuplicate(false);
-
-        if (shouldCheckDuplicate) {
-          if (duplicate) {
-            setDuplicateComic(duplicate);
-            setShowDuplicateModal(true);
-          } else {
-            seriesInputRef.current?.focus();
-          }
-        } else if (!appliedSeries && !scannedIssue) {
+        if (!appliedSeries && !scannedIssue) {
           setAlertModal({
             isOpen: true,
             title: 'Incomplete Scan',
@@ -258,6 +237,30 @@ export function AddComic() {
         } else {
           seriesInputRef.current?.focus();
         }
+
+        // Background checks — run without blocking the form
+        const shouldCheckConflict = scannedTotal != null && result.data.story !== undefined;
+        const shouldCheckDuplicate = mode === 'collection' && !!appliedSeries && !!scannedIssue;
+
+        if (shouldCheckDuplicate) setCheckingDuplicate(true);
+
+        Promise.all([
+          shouldCheckConflict
+            ? checkTotalIssuesConflict(appliedSeries, appliedStory, scannedTotal!)
+            : Promise.resolve(false),
+          shouldCheckDuplicate
+            ? checkForDuplicates(appliedSeries, scannedIssue, appliedStory)
+            : Promise.resolve(null),
+        ]).then(([conflict, duplicate]) => {
+          if (shouldCheckConflict) setTotalIssuesConflict(conflict);
+          if (shouldCheckDuplicate) {
+            setCheckingDuplicate(false);
+            if (duplicate) {
+              setDuplicateComic(duplicate);
+              setShowDuplicateModal(true);
+            }
+          }
+        });
       } else {
         setAlertModal({
           isOpen: true,
