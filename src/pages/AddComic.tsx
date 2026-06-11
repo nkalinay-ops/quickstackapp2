@@ -28,7 +28,7 @@ export function AddComic() {
   const [year, setYear] = useState('');
   const [condition, setCondition] = useState('');
   const [purchasePrice, setPurchasePrice] = useState('');
-  const [purchaseDate, setPurchaseDate] = useState('');
+  const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0]);
 
   // Wishlist-only fields
   const [priority, setPriority] = useState('Medium');
