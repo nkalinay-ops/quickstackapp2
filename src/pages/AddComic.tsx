@@ -220,6 +220,9 @@ export function AddComic() {
         const scannedTotal = result.data.total_issues ?? null;
         setTotalIssues(scannedTotal ? scannedTotal.toString() : '');
         setCoverVariant(result.data.cover_variant ? result.data.cover_variant.toString() : '');
+        if (result.data.cover_price != null) {
+          setPurchasePrice(result.data.cover_price.toFixed(2));
+        }
 
         const shouldCheckConflict = scannedTotal != null && result.data.story !== undefined;
         const shouldCheckDuplicate = mode === 'collection' && !!appliedSeries && !!scannedIssue;

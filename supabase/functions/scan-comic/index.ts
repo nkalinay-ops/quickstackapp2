@@ -15,6 +15,7 @@ interface ComicData {
   year: number | null;
   total_issues: number | null;
   cover_variant: number | null;
+  cover_price: number | null;
 }
 
 const FREE_TIER_SCAN_LIMIT = 20;
@@ -121,6 +122,7 @@ Response format:
   "year": number or null,
   "total_issues": number or null,
   "cover_variant": number or null,
+  "cover_price": number or null,
   "confidence": "high" | "medium" | "low"
 }
 
@@ -132,20 +134,22 @@ Field definitions:
 - "year": Publication year as a number, or null.
 - "total_issues": Total issues in arc from patterns like "of 4", "#2 of 6", "Part 3 of 5". Convert written-out totals ("of Six" → 6). Null if not a limited series or not shown.
 - "cover_variant": Variant number if explicitly labeled ("Cover B" → 2, "Cover C" → 3, "Variant 2" → 2). Ratio variants like "1:25" → null. Null if standard Cover A or unlabeled.
+- "cover_price": The printed cover price as a decimal number (e.g., "$3.99" → 3.99, "£2.50" → 2.50). Null if not visible.
 
 Rules:
 1. "series" is the brand that spans many issues; "story" is only a subtitle for this specific issue.
 2. Issue numbers and totals: always output digits. Convert all written-out cardinals/ordinals.
 3. Cover variant letters map to numbers: A=1, B=2, C=3, D=4, etc.
-4. If the image is unclear, return JSON with empty strings/nulls and "low" confidence.
-5. NEVER respond with explanatory text — ONLY valid JSON.`
+4. cover_price: strip the currency symbol and return only the numeric value.
+5. If the image is unclear, return JSON with empty strings/nulls and "low" confidence.
+6. NEVER respond with explanatory text — ONLY valid JSON.`
           },
           {
             role: "user",
             content: [
               {
                 type: "text",
-                text: `Extract all readable text from this comic book cover: series name, story/arc subtitle, issue number (digits only), publisher, year, total issues in arc if shown, and any cover variant label.`
+                text: `Extract all readable text from this comic book cover: series name, story/arc subtitle, issue number (digits only), publisher, year, total issues in arc if shown, any cover variant label, and the printed cover price if visible.`
               },
               {
                 type: "image_url",
@@ -255,6 +259,7 @@ Rules:
           year: comicData.year || null,
           total_issues: comicData.total_issues || null,
           cover_variant: comicData.cover_variant || null,
+          cover_price: comicData.cover_price ?? null,
         },
         scan_info: {
           tier,
