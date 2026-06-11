@@ -9,6 +9,8 @@ import { AlertModal } from '../components/AlertModal';
 
 const FREE_SCAN_LIMIT = 20;
 
+const todayEST = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+
 type Mode = 'collection' | 'wishlist';
 
 export function AddComic() {
@@ -28,7 +30,7 @@ export function AddComic() {
   const [year, setYear] = useState('');
   const [condition, setCondition] = useState('');
   const [purchasePrice, setPurchasePrice] = useState('');
-  const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0]);
+  const [purchaseDate, setPurchaseDate] = useState(todayEST());
 
   // Wishlist-only fields
   const [priority, setPriority] = useState('Medium');
@@ -88,7 +90,7 @@ export function AddComic() {
     setYear('');
     setCondition('');
     setPurchasePrice('');
-    setPurchaseDate('');
+    setPurchaseDate(todayEST());
     setNotes('');
     setTotalIssues('');
     setCoverVariant('');
@@ -572,16 +574,28 @@ export function AddComic() {
       const purchasePriceSnap = purchasePrice;
       const purchaseDateSnap = purchaseDate;
       const rawSnap = scannedRaw;
-      // Duplicate check before inserting into collection
-      if (seriesSnap.trim() && issueSnap.trim()) {
-        setCheckingDuplicate(true);
-        const duplicate = await checkForDuplicates(seriesSnap, issueSnap, storySnap);
-        setCheckingDuplicate(false);
-        if (duplicate) {
-          setDuplicateComic(duplicate);
-          setShowDuplicateModal(true);
-          return;
-        }
+      // Run duplicate and total-issues conflict checks simultaneously
+      const parsedTotalForCheck = totalIssuesSnap ? parseInt(totalIssuesSnap) : null;
+      const shouldCheckConflict = parsedTotalForCheck !== null;
+      const shouldCheckDuplicate = !!(seriesSnap.trim() && issueSnap.trim());
+
+      if (shouldCheckDuplicate) setCheckingDuplicate(true);
+
+      const [conflictFound, duplicateFound] = await Promise.all([
+        shouldCheckConflict
+          ? checkTotalIssuesConflict(seriesSnap, storySnap, parsedTotalForCheck)
+          : Promise.resolve(false),
+        shouldCheckDuplicate
+          ? checkForDuplicates(seriesSnap, issueSnap, storySnap)
+          : Promise.resolve(null),
+      ]);
+
+      if (shouldCheckDuplicate) setCheckingDuplicate(false);
+      if (conflictFound) setTotalIssuesConflict(true);
+      if (duplicateFound) {
+        setDuplicateComic(duplicateFound);
+        setShowDuplicateModal(true);
+        return;
       }
 
       setLoading(true);
