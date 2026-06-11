@@ -221,16 +221,24 @@ export function AddComic() {
         setTotalIssues(scannedTotal ? scannedTotal.toString() : '');
         setCoverVariant(result.data.cover_variant ? result.data.cover_variant.toString() : '');
 
-        if (scannedTotal && result.data.story !== undefined) {
-          const conflict = await checkTotalIssuesConflict(appliedSeries, appliedStory, scannedTotal);
-          setTotalIssuesConflict(conflict);
-        }
+        const shouldCheckConflict = scannedTotal != null && result.data.story !== undefined;
+        const shouldCheckDuplicate = mode === 'collection' && !!appliedSeries && !!scannedIssue;
 
-        // Only check duplicates when in collection mode
-        if (mode === 'collection' && appliedSeries && scannedIssue) {
-          setCheckingDuplicate(true);
-          const duplicate = await checkForDuplicates(appliedSeries, scannedIssue, appliedStory);
-          setCheckingDuplicate(false);
+        if (shouldCheckDuplicate) setCheckingDuplicate(true);
+
+        const [conflict, duplicate] = await Promise.all([
+          shouldCheckConflict
+            ? checkTotalIssuesConflict(appliedSeries, appliedStory, scannedTotal!)
+            : Promise.resolve(false),
+          shouldCheckDuplicate
+            ? checkForDuplicates(appliedSeries, scannedIssue, appliedStory)
+            : Promise.resolve(null),
+        ]);
+
+        if (shouldCheckConflict) setTotalIssuesConflict(conflict);
+        if (shouldCheckDuplicate) setCheckingDuplicate(false);
+
+        if (shouldCheckDuplicate) {
           if (duplicate) {
             setDuplicateComic(duplicate);
             setShowDuplicateModal(true);
