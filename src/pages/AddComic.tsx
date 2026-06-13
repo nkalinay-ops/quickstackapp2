@@ -60,6 +60,9 @@ export function AddComic() {
   const pendingRuleSuggestionRef = useRef<OcrCorrectionRule | null>(null);
   const scanButtonRef = useRef<HTMLButtonElement>(null);
   const seriesInputRef = useRef<HTMLInputElement>(null);
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+  const [ocrFilledFields, setOcrFilledFields] = useState<Set<string>>(new Set());
+  const [bypassDuplicateOnSubmit, setBypassDuplicateOnSubmit] = useState(false);
 
   const focusScanButton = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -99,6 +102,8 @@ export function AddComic() {
     setPriority('Medium');
     setScannedRaw(null);
     setAppliedRuleBanner(null);
+    setOcrFilledFields(new Set());
+    setBypassDuplicateOnSubmit(false);
     // NOTE: pendingRuleSuggestion is intentionally NOT cleared here so a
     // suggestion that was just computed survives the form reset.
   };
@@ -208,6 +213,18 @@ export function AddComic() {
           setPurchasePrice(result.data.cover_price.toFixed(2));
         }
 
+        // Track which fields the OCR scan populated for visual highlighting
+        const ocrFilled = new Set<string>();
+        if (rawSeries) ocrFilled.add('series');
+        if (rawStory) ocrFilled.add('story');
+        if (scannedIssue) ocrFilled.add('issueNumber');
+        if (result.data.publisher) ocrFilled.add('publisher');
+        if (result.data.year) ocrFilled.add('year');
+        if (scannedTotal) ocrFilled.add('totalIssues');
+        if (result.data.cover_variant) ocrFilled.add('coverVariant');
+        if (result.data.cover_price != null) ocrFilled.add('purchasePrice');
+        setOcrFilledFields(ocrFilled);
+
         // Results are ready — unblock the UI immediately
         setScanning(false);
 
@@ -219,7 +236,7 @@ export function AddComic() {
             type: 'info',
           });
         } else {
-          seriesInputRef.current?.focus();
+          addButtonRef.current?.focus();
         }
 
         // All three background DB queries run concurrently after the form is already visible
@@ -251,13 +268,13 @@ export function AddComic() {
             setSeries((rule as OcrCorrectionRule).corrected_series);
             setStory((rule as OcrCorrectionRule).corrected_story);
             setAppliedRuleBanner(rule as OcrCorrectionRule);
+            setOcrFilledFields(prev => { const n = new Set(prev); n.add('series'); n.add('story'); return n; });
           }
           if (shouldCheckConflict) setTotalIssuesConflict(conflict as boolean);
           if (shouldCheckDuplicate) {
             setCheckingDuplicate(false);
             if (duplicate) {
               setDuplicateComic(duplicate as typeof duplicate);
-              setShowDuplicateModal(true);
             }
           }
         });
@@ -575,7 +592,7 @@ export function AddComic() {
       // Run duplicate and total-issues conflict checks simultaneously
       const parsedTotalForCheck = totalIssuesSnap ? parseInt(totalIssuesSnap) : null;
       const shouldCheckConflict = parsedTotalForCheck !== null;
-      const shouldCheckDuplicate = !!(seriesSnap.trim() && issueSnap.trim());
+      const shouldCheckDuplicate = !!(seriesSnap.trim() && issueSnap.trim()) && !bypassDuplicateOnSubmit;
 
       if (shouldCheckDuplicate) setCheckingDuplicate(true);
 
@@ -592,7 +609,6 @@ export function AddComic() {
       if (conflictFound) setTotalIssuesConflict(true);
       if (duplicateFound) {
         setDuplicateComic(duplicateFound);
-        setShowDuplicateModal(true);
         return;
       }
 
@@ -675,6 +691,14 @@ export function AddComic() {
   };
 
   const conditions = ['Mint', 'Near Mint', 'Very Fine', 'Very Good', 'Fine', 'Good', 'Fair', 'Poor'];
+
+  const ocrFieldClass = (field: string) =>
+    ocrFilledFields.has(field)
+      ? 'border-sky-500 bg-sky-950/20 focus:border-sky-400 focus:ring-sky-500'
+      : 'border-gray-800 focus:border-blue-500 focus:ring-blue-500';
+
+  const clearOcrField = (field: string) =>
+    setOcrFilledFields(prev => { const n = new Set(prev); n.delete(field); return n; });
 
   if (showCamera) {
     return (
@@ -958,10 +982,10 @@ export function AddComic() {
             id="series"
             type="text"
             value={series}
-            onChange={(e) => setSeries(e.target.value)}
+            onChange={(e) => { setSeries(e.target.value); clearOcrField('series'); }}
             required
             placeholder="e.g., The Amazing Spider-Man"
-            className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg"
+            className={`w-full px-4 py-3 bg-gray-900 text-white rounded-lg border focus:outline-none focus:ring-2 text-lg transition-colors ${ocrFieldClass('series')}`}
           />
         </div>
 
@@ -973,9 +997,9 @@ export function AddComic() {
             id="story"
             type="text"
             value={story}
-            onChange={(e) => setStory(e.target.value)}
+            onChange={(e) => { setStory(e.target.value); clearOcrField('story'); }}
             placeholder="e.g., Kraven's Last Hunt"
-            className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={`w-full px-4 py-3 bg-gray-900 text-white rounded-lg border focus:outline-none focus:ring-2 transition-colors ${ocrFieldClass('story')}`}
           />
         </div>
 
@@ -988,9 +1012,9 @@ export function AddComic() {
               id="issue"
               type="text"
               value={issueNumber}
-              onChange={(e) => setIssueNumber(e.target.value)}
+              onChange={(e) => { setIssueNumber(e.target.value); clearOcrField('issueNumber'); }}
               placeholder="300"
-              className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={`w-full px-4 py-3 bg-gray-900 text-white rounded-lg border focus:outline-none focus:ring-2 transition-colors ${ocrFieldClass('issueNumber')}`}
             />
           </div>
 
@@ -1002,9 +1026,9 @@ export function AddComic() {
               id="publisher"
               type="text"
               value={publisher}
-              onChange={(e) => setPublisher(e.target.value)}
+              onChange={(e) => { setPublisher(e.target.value); clearOcrField('publisher'); }}
               placeholder="e.g., Marvel, DC"
-              className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={`w-full px-4 py-3 bg-gray-900 text-white rounded-lg border focus:outline-none focus:ring-2 transition-colors ${ocrFieldClass('publisher')}`}
             />
           </div>
         </div>
@@ -1019,9 +1043,9 @@ export function AddComic() {
             type="number"
             min="1"
             value={coverVariant}
-            onChange={(e) => setCoverVariant(e.target.value)}
+            onChange={(e) => { setCoverVariant(e.target.value); clearOcrField('coverVariant'); }}
             placeholder="e.g., 2"
-            className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={`w-full px-4 py-3 bg-gray-900 text-white rounded-lg border focus:outline-none focus:ring-2 transition-colors ${ocrFieldClass('coverVariant')}`}
           />
         </div>
 
@@ -1035,12 +1059,12 @@ export function AddComic() {
             type="number"
             min="1"
             value={totalIssues}
-            onChange={(e) => { setTotalIssues(e.target.value); setTotalIssuesConflict(false); }}
+            onChange={(e) => { setTotalIssues(e.target.value); setTotalIssuesConflict(false); clearOcrField('totalIssues'); }}
             placeholder="e.g., 6"
             className={`w-full px-4 py-3 bg-gray-900 text-white rounded-lg border focus:outline-none focus:ring-2 transition-colors ${
               totalIssuesConflict
                 ? 'border-amber-600 focus:border-amber-500 focus:ring-amber-500'
-                : 'border-gray-800 focus:border-blue-500 focus:ring-blue-500'
+                : ocrFieldClass('totalIssues')
             }`}
           />
           {totalIssuesConflict && (
@@ -1064,9 +1088,9 @@ export function AddComic() {
                 id="year"
                 type="number"
                 value={year}
-                onChange={(e) => setYear(e.target.value)}
+                onChange={(e) => { setYear(e.target.value); clearOcrField('year'); }}
                 placeholder="1988"
-                className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-4 py-3 bg-gray-900 text-white rounded-lg border focus:outline-none focus:ring-2 transition-colors ${ocrFieldClass('year')}`}
               />
             </div>
 
@@ -1106,9 +1130,13 @@ export function AddComic() {
                       min="0"
                       step="0.01"
                       value={purchasePrice}
-                      onChange={(e) => setPurchasePrice(e.target.value)}
+                      onChange={(e) => { setPurchasePrice(e.target.value); clearOcrField('purchasePrice'); }}
                       placeholder="0.00"
-                      className="w-full pl-7 pr-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className={`w-full pl-7 pr-4 py-3 bg-gray-800 text-white rounded-lg border focus:outline-none focus:ring-2 transition-colors ${
+                        ocrFilledFields.has('purchasePrice')
+                          ? 'border-sky-500 focus:border-sky-400 focus:ring-sky-500'
+                          : 'border-gray-700 focus:border-blue-500 focus:ring-blue-500'
+                      }`}
                     />
                   </div>
                 </div>
@@ -1171,7 +1199,37 @@ export function AddComic() {
           />
         </div>
 
+        {duplicateComic && !showDuplicateModal && (
+          <div className="flex items-start gap-3 bg-amber-950 border border-amber-700 rounded-lg px-4 py-3">
+            <AlertTriangle size={16} className="text-amber-400 mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-amber-200 font-medium">Possible duplicate found</p>
+              <p className="text-xs text-amber-300 mt-0.5">
+                {duplicateComic.series}{duplicateComic.issue_number ? ` #${duplicateComic.issue_number}` : ''} is already in your collection.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowDuplicateModal(true)}
+                className="text-xs bg-amber-700 hover:bg-amber-600 text-white px-3 py-1.5 rounded-md font-medium transition-colors"
+              >
+                Review
+              </button>
+              <button
+                type="button"
+                onClick={() => { setDuplicateComic(null); setBypassDuplicateOnSubmit(true); }}
+                className="text-amber-500 hover:text-amber-300 transition-colors"
+                title="Dismiss — add as new entry"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        )}
+
         <button
+          ref={addButtonRef}
           type="submit"
           disabled={loading || !series.trim()}
           className={`w-full py-4 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg ${
