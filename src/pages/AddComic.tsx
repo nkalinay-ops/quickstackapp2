@@ -195,28 +195,9 @@ export function AddComic() {
         // Store the raw OCR output so we can detect user corrections later
         setScannedRaw({ series: rawSeries, story: rawStory });
 
-        const appliedSeries = rawSeries;
-        const appliedStory = rawStory;
-
-        // [TIMING TEST] OCR correction rules lookup disabled
-        // if (user && rawSeries) {
-        //   const { data: rule } = await supabase
-        //     .from('ocr_correction_rules')
-        //     .select('*')
-        //     .eq('user_id', user.id)
-        //     .eq('is_confirmed', true)
-        //     .ilike('ocr_series', rawSeries)
-        //     .ilike('ocr_story', rawStory)
-        //     .maybeSingle();
-        //   if (rule) {
-        //     appliedSeries = rule.corrected_series;
-        //     appliedStory = rule.corrected_story;
-        //     setAppliedRuleBanner(rule as OcrCorrectionRule);
-        //   }
-        // }
-
-        setSeries(appliedSeries);
-        setStory(appliedStory);
+        // Populate form immediately from raw OCR — unblocks the UI with zero DB round-trips
+        setSeries(rawSeries);
+        setStory(rawStory);
         setIssueNumber(scannedIssue);
         setPublisher(result.data.publisher || '');
         setYear(result.data.year ? result.data.year.toString() : '');
@@ -230,7 +211,7 @@ export function AddComic() {
         // Results are ready — unblock the UI immediately
         setScanning(false);
 
-        if (!appliedSeries && !scannedIssue) {
+        if (!rawSeries && !scannedIssue) {
           setAlertModal({
             isOpen: true,
             title: 'Incomplete Scan',
@@ -241,27 +222,45 @@ export function AddComic() {
           seriesInputRef.current?.focus();
         }
 
-        // [TIMING TEST] Background checks disabled (checkTotalIssuesConflict + checkForDuplicates)
-        // const shouldCheckConflict = scannedTotal != null && result.data.story !== undefined;
-        // const shouldCheckDuplicate = mode === 'collection' && !!appliedSeries && !!scannedIssue;
-        // if (shouldCheckDuplicate) setCheckingDuplicate(true);
-        // Promise.all([
-        //   shouldCheckConflict
-        //     ? checkTotalIssuesConflict(appliedSeries, appliedStory, scannedTotal!)
-        //     : Promise.resolve(false),
-        //   shouldCheckDuplicate
-        //     ? checkForDuplicates(appliedSeries, scannedIssue, appliedStory)
-        //     : Promise.resolve(null),
-        // ]).then(([conflict, duplicate]) => {
-        //   if (shouldCheckConflict) setTotalIssuesConflict(conflict);
-        //   if (shouldCheckDuplicate) {
-        //     setCheckingDuplicate(false);
-        //     if (duplicate) {
-        //       setDuplicateComic(duplicate);
-        //       setShowDuplicateModal(true);
-        //     }
-        //   }
-        // });
+        // All three background DB queries run concurrently after the form is already visible
+        const shouldCheckConflict = scannedTotal != null && result.data.story !== undefined;
+        const shouldCheckDuplicate = mode === 'collection' && !!rawSeries && !!scannedIssue;
+
+        if (shouldCheckDuplicate) setCheckingDuplicate(true);
+
+        Promise.all([
+          user && rawSeries
+            ? supabase
+                .from('ocr_correction_rules')
+                .select('*')
+                .eq('user_id', user.id)
+                .eq('is_confirmed', true)
+                .ilike('ocr_series', rawSeries)
+                .ilike('ocr_story', rawStory)
+                .maybeSingle()
+                .then(({ data }) => data ?? null)
+            : Promise.resolve(null),
+          shouldCheckConflict
+            ? checkTotalIssuesConflict(rawSeries, rawStory, scannedTotal!)
+            : Promise.resolve(false),
+          shouldCheckDuplicate
+            ? checkForDuplicates(rawSeries, scannedIssue, rawStory)
+            : Promise.resolve(null),
+        ]).then(([rule, conflict, duplicate]) => {
+          if (rule) {
+            setSeries((rule as OcrCorrectionRule).corrected_series);
+            setStory((rule as OcrCorrectionRule).corrected_story);
+            setAppliedRuleBanner(rule as OcrCorrectionRule);
+          }
+          if (shouldCheckConflict) setTotalIssuesConflict(conflict as boolean);
+          if (shouldCheckDuplicate) {
+            setCheckingDuplicate(false);
+            if (duplicate) {
+              setDuplicateComic(duplicate as typeof duplicate);
+              setShowDuplicateModal(true);
+            }
+          }
+        });
       } else {
         setAlertModal({
           isOpen: true,
