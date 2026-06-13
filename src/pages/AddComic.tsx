@@ -195,24 +195,25 @@ export function AddComic() {
         // Store the raw OCR output so we can detect user corrections later
         setScannedRaw({ series: rawSeries, story: rawStory });
 
-        // Check for a confirmed correction rule matching this OCR output
-        let appliedSeries = rawSeries;
-        let appliedStory = rawStory;
-        if (user && rawSeries) {
-          const { data: rule } = await supabase
-            .from('ocr_correction_rules')
-            .select('*')
-            .eq('user_id', user.id)
-            .eq('is_confirmed', true)
-            .ilike('ocr_series', rawSeries)
-            .ilike('ocr_story', rawStory)
-            .maybeSingle();
-          if (rule) {
-            appliedSeries = rule.corrected_series;
-            appliedStory = rule.corrected_story;
-            setAppliedRuleBanner(rule as OcrCorrectionRule);
-          }
-        }
+        const appliedSeries = rawSeries;
+        const appliedStory = rawStory;
+
+        // [TIMING TEST] OCR correction rules lookup disabled
+        // if (user && rawSeries) {
+        //   const { data: rule } = await supabase
+        //     .from('ocr_correction_rules')
+        //     .select('*')
+        //     .eq('user_id', user.id)
+        //     .eq('is_confirmed', true)
+        //     .ilike('ocr_series', rawSeries)
+        //     .ilike('ocr_story', rawStory)
+        //     .maybeSingle();
+        //   if (rule) {
+        //     appliedSeries = rule.corrected_series;
+        //     appliedStory = rule.corrected_story;
+        //     setAppliedRuleBanner(rule as OcrCorrectionRule);
+        //   }
+        // }
 
         setSeries(appliedSeries);
         setStory(appliedStory);
@@ -240,29 +241,27 @@ export function AddComic() {
           seriesInputRef.current?.focus();
         }
 
-        // Background checks — run without blocking the form
-        const shouldCheckConflict = scannedTotal != null && result.data.story !== undefined;
-        const shouldCheckDuplicate = mode === 'collection' && !!appliedSeries && !!scannedIssue;
-
-        if (shouldCheckDuplicate) setCheckingDuplicate(true);
-
-        Promise.all([
-          shouldCheckConflict
-            ? checkTotalIssuesConflict(appliedSeries, appliedStory, scannedTotal!)
-            : Promise.resolve(false),
-          shouldCheckDuplicate
-            ? checkForDuplicates(appliedSeries, scannedIssue, appliedStory)
-            : Promise.resolve(null),
-        ]).then(([conflict, duplicate]) => {
-          if (shouldCheckConflict) setTotalIssuesConflict(conflict);
-          if (shouldCheckDuplicate) {
-            setCheckingDuplicate(false);
-            if (duplicate) {
-              setDuplicateComic(duplicate);
-              setShowDuplicateModal(true);
-            }
-          }
-        });
+        // [TIMING TEST] Background checks disabled (checkTotalIssuesConflict + checkForDuplicates)
+        // const shouldCheckConflict = scannedTotal != null && result.data.story !== undefined;
+        // const shouldCheckDuplicate = mode === 'collection' && !!appliedSeries && !!scannedIssue;
+        // if (shouldCheckDuplicate) setCheckingDuplicate(true);
+        // Promise.all([
+        //   shouldCheckConflict
+        //     ? checkTotalIssuesConflict(appliedSeries, appliedStory, scannedTotal!)
+        //     : Promise.resolve(false),
+        //   shouldCheckDuplicate
+        //     ? checkForDuplicates(appliedSeries, scannedIssue, appliedStory)
+        //     : Promise.resolve(null),
+        // ]).then(([conflict, duplicate]) => {
+        //   if (shouldCheckConflict) setTotalIssuesConflict(conflict);
+        //   if (shouldCheckDuplicate) {
+        //     setCheckingDuplicate(false);
+        //     if (duplicate) {
+        //       setDuplicateComic(duplicate);
+        //       setShowDuplicateModal(true);
+        //     }
+        //   }
+        // });
       } else {
         setAlertModal({
           isOpen: true,
