@@ -52,7 +52,7 @@ export function AddComic() {
   const [monthlyScanCount, setMonthlyScanCount] = useState<number | null>(null);
   const [scanRenewalInterval, setScanRenewalInterval] = useState<'month' | 'day'>('month');
   // OCR correction rule engine
-  const [scannedRaw, setScannedRaw] = useState<{ series: string; story: string } | null>(null);
+  const [scannedRaw, setScannedRaw] = useState<{ series: string; story: string; publisher: string } | null>(null);
   const [pendingRuleSuggestion, setPendingRuleSuggestion] = useState<OcrCorrectionRule | null>(null);
   const [appliedRuleBanner, setAppliedRuleBanner] = useState<OcrCorrectionRule | null>(null);
   const pendingScanNext = useRef(false);
@@ -195,16 +195,17 @@ export function AddComic() {
         }
         const rawSeries = result.data.series || '';
         const rawStory = result.data.story || '';
+        const rawPublisher = result.data.publisher || '';
         const scannedIssue = result.data.issue_number || '';
 
         // Store the raw OCR output so we can detect user corrections later
-        setScannedRaw({ series: rawSeries, story: rawStory });
+        setScannedRaw({ series: rawSeries, story: rawStory, publisher: rawPublisher });
 
         // Populate form immediately from raw OCR — unblocks the UI with zero DB round-trips
         setSeries(rawSeries);
         setStory(rawStory);
         setIssueNumber(scannedIssue);
-        setPublisher(result.data.publisher || '');
+        setPublisher(rawPublisher);
         setYear(result.data.year ? result.data.year.toString() : '');
         const scannedTotal = result.data.total_issues ?? null;
         setTotalIssues(scannedTotal ? scannedTotal.toString() : '');
@@ -254,6 +255,7 @@ export function AddComic() {
                 .eq('is_confirmed', true)
                 .ilike('ocr_series', rawSeries)
                 .ilike('ocr_story', rawStory)
+                .ilike('ocr_publisher', rawPublisher)
                 .maybeSingle()
                 .then(({ data }) => data ?? null)
             : Promise.resolve(null),
@@ -267,8 +269,9 @@ export function AddComic() {
           if (rule) {
             setSeries((rule as OcrCorrectionRule).corrected_series);
             setStory((rule as OcrCorrectionRule).corrected_story);
+            setPublisher((rule as OcrCorrectionRule).corrected_publisher);
             setAppliedRuleBanner(rule as OcrCorrectionRule);
-            setOcrFilledFields(prev => { const n = new Set(prev); n.add('series'); n.add('story'); return n; });
+            setOcrFilledFields(prev => { const n = new Set(prev); n.add('series'); n.add('story'); n.add('publisher'); return n; });
           }
           if (shouldCheckConflict) setTotalIssuesConflict(conflict as boolean);
           if (shouldCheckDuplicate) {
@@ -443,14 +446,15 @@ export function AddComic() {
   };
 
   const trackOcrCorrection = async (
-    raw: { series: string; story: string },
-    saved: { series: string; story: string },
+    raw: { series: string; story: string; publisher: string },
+    saved: { series: string; story: string; publisher: string },
     correctionThreshold: number
   ): Promise<OcrCorrectionRule | null> => {
     if (!user) return null;
     const seriesChanged = raw.series.trim().toLowerCase() !== saved.series.trim().toLowerCase();
     const storyChanged = raw.story.trim().toLowerCase() !== saved.story.trim().toLowerCase();
-    if (!seriesChanged && !storyChanged) return null;
+    const publisherChanged = raw.publisher.trim().toLowerCase() !== saved.publisher.trim().toLowerCase();
+    if (!seriesChanged && !storyChanged && !publisherChanged) return null;
 
     try {
       const { data: existing } = await supabase
@@ -459,6 +463,7 @@ export function AddComic() {
         .eq('user_id', user.id)
         .ilike('ocr_series', raw.series)
         .ilike('ocr_story', raw.story)
+        .ilike('ocr_publisher', raw.publisher)
         .maybeSingle();
 
       if (existing) {
@@ -468,6 +473,7 @@ export function AddComic() {
           .update({
             corrected_series: saved.series.trim(),
             corrected_story: saved.story.trim(),
+            corrected_publisher: saved.publisher.trim(),
             occurrence_count: newCount,
             updated_at: new Date().toISOString(),
           })
@@ -490,8 +496,10 @@ export function AddComic() {
             user_id: user.id,
             ocr_series: raw.series.trim(),
             ocr_story: raw.story.trim(),
+            ocr_publisher: raw.publisher.trim(),
             corrected_series: saved.series.trim(),
             corrected_story: saved.story.trim(),
+            corrected_publisher: saved.publisher.trim(),
             occurrence_count: 1,
           })
           .select('*')
@@ -534,7 +542,7 @@ export function AddComic() {
           .eq('user_id', user!.id)
           .maybeSingle();
         const threshold = prefs?.correction_threshold ?? 3;
-        suggestion = await trackOcrCorrection(rawSnap, { series: seriesSnap, story: storySnap }, threshold);
+        suggestion = await trackOcrCorrection(rawSnap, { series: seriesSnap, story: storySnap, publisher: publisherSnap }, threshold);
       }
       setSuccess(true);
       resetForm();
@@ -625,7 +633,7 @@ export function AddComic() {
             .eq('user_id', user.id)
             .maybeSingle();
           const threshold = prefs?.correction_threshold ?? 3;
-          suggestion = await trackOcrCorrection(rawSnap, { series: seriesSnap, story: storySnap }, threshold);
+          suggestion = await trackOcrCorrection(rawSnap, { series: seriesSnap, story: storySnap, publisher: publisherSnap }, threshold);
         }
         setSuccess(true);
         resetForm();
@@ -650,6 +658,7 @@ export function AddComic() {
       // Wishlist insert
       const seriesSnap = series;
       const storySnap = story;
+      const publisherSnap = publisher;
       const rawSnap = scannedRaw;
       setLoading(true);
       setSuccess(false);
@@ -659,7 +668,7 @@ export function AddComic() {
           series: seriesSnap.trim(),
           story: storySnap.trim(),
           issue_number: issueNumber.trim(),
-          publisher: publisher.trim(),
+          publisher: publisherSnap.trim(),
           priority,
           notes: notes.trim(),
           total_issues: totalIssues ? parseInt(totalIssues) : null,
@@ -675,7 +684,7 @@ export function AddComic() {
             .eq('user_id', user.id)
             .maybeSingle();
           const threshold = prefs?.correction_threshold ?? 3;
-          suggestion = await trackOcrCorrection(rawSnap, { series: seriesSnap, story: storySnap }, threshold);
+          suggestion = await trackOcrCorrection(rawSnap, { series: seriesSnap, story: storySnap, publisher: publisherSnap }, threshold);
         }
         setSuccess(true);
         resetForm();
@@ -757,7 +766,7 @@ export function AddComic() {
           <Wand2 size={16} className="text-blue-400 mt-0.5 shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-sm text-blue-200">
-              Auto-corrected using your saved rule: <span className="font-medium">"{appliedRuleBanner.ocr_series}{appliedRuleBanner.ocr_story ? ` / ${appliedRuleBanner.ocr_story}` : ''}"</span> &rarr; <span className="font-medium">"{appliedRuleBanner.corrected_series}{appliedRuleBanner.corrected_story ? ` / ${appliedRuleBanner.corrected_story}` : ''}"</span>
+              Auto-corrected using your saved rule: <span className="font-medium">"{appliedRuleBanner.ocr_series}{appliedRuleBanner.ocr_story ? ` / ${appliedRuleBanner.ocr_story}` : ''}{appliedRuleBanner.ocr_publisher ? ` · ${appliedRuleBanner.ocr_publisher}` : ''}"</span> &rarr; <span className="font-medium">"{appliedRuleBanner.corrected_series}{appliedRuleBanner.corrected_story ? ` / ${appliedRuleBanner.corrected_story}` : ''}{appliedRuleBanner.corrected_publisher ? ` · ${appliedRuleBanner.corrected_publisher}` : ''}"</span>
             </p>
           </div>
           <button
@@ -765,6 +774,7 @@ export function AddComic() {
             onClick={() => {
               setSeries(appliedRuleBanner.ocr_series);
               setStory(appliedRuleBanner.ocr_story);
+              setPublisher(appliedRuleBanner.ocr_publisher);
               setAppliedRuleBanner(null);
             }}
             className="text-xs text-blue-400 hover:text-blue-200 transition-colors shrink-0 underline underline-offset-2"
@@ -788,7 +798,7 @@ export function AddComic() {
           <div className="flex-1 min-w-0">
             <p className="text-sm text-amber-200 font-medium mb-0.5">Save a scan correction rule?</p>
             <p className="text-xs text-amber-300">
-              You've corrected <span className="font-medium">"{pendingRuleSuggestion.ocr_series}{pendingRuleSuggestion.ocr_story ? ` / ${pendingRuleSuggestion.ocr_story}` : ''}"</span> to <span className="font-medium">"{pendingRuleSuggestion.corrected_series}{pendingRuleSuggestion.corrected_story ? ` / ${pendingRuleSuggestion.corrected_story}` : ''}"</span> {pendingRuleSuggestion.occurrence_count} times. QuickStack can apply this automatically from now on.
+              You've corrected <span className="font-medium">"{pendingRuleSuggestion.ocr_series}{pendingRuleSuggestion.ocr_story ? ` / ${pendingRuleSuggestion.ocr_story}` : ''}{pendingRuleSuggestion.ocr_publisher ? ` · ${pendingRuleSuggestion.ocr_publisher}` : ''}"</span> to <span className="font-medium">"{pendingRuleSuggestion.corrected_series}{pendingRuleSuggestion.corrected_story ? ` / ${pendingRuleSuggestion.corrected_story}` : ''}{pendingRuleSuggestion.corrected_publisher ? ` · ${pendingRuleSuggestion.corrected_publisher}` : ''}"</span> {pendingRuleSuggestion.occurrence_count} times. QuickStack can apply this automatically from now on.
             </p>
           </div>
           <div className="flex gap-2 shrink-0">
