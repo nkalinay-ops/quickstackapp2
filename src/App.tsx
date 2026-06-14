@@ -35,6 +35,12 @@ function AppContent() {
   };
 
   const [currentPage, setCurrentPage] = useState<Page>(getInitialPage());
+  const [preSelectComicId, setPreSelectComicId] = useState<string | null>(null);
+
+  const navigateToComic = (comicId: string) => {
+    setPreSelectComicId(comicId);
+    setCurrentPage('collection');
+  };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -85,8 +91,8 @@ function AppContent() {
 
   return (
     <Layout currentPage={currentPage as LayoutPage} onNavigate={(p) => setCurrentPage(p)}>
-      {currentPage === 'dashboard' && <Dashboard />}
-      {currentPage === 'collection' && <Collection />}
+      {currentPage === 'dashboard' && <Dashboard onNavigate={(p) => setCurrentPage(p as Page)} onNavigateToComic={navigateToComic} />}
+      {currentPage === 'collection' && <Collection initialComicId={preSelectComicId} onComicConsumed={() => setPreSelectComicId(null)} />}
       {currentPage === 'add' && <AddComic />}
       {currentPage === 'wishlist' && <Wishlist />}
       {currentPage === 'settings' && <Settings />}

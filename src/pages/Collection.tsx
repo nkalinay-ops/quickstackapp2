@@ -121,7 +121,10 @@ function issueRange(comics: Comic[]): string {
   return `#${nums[0]} – #${nums[nums.length - 1]}`;
 }
 
-export function Collection() {
+export function Collection({ initialComicId, onComicConsumed }: {
+  initialComicId?: string | null;
+  onComicConsumed?: () => void;
+}) {
   const { user } = useAuth();
   const [comics, setComics] = useState<Comic[]>([]);
   const [filteredComics, setFilteredComics] = useState<Comic[]>([]);
@@ -178,6 +181,11 @@ export function Collection() {
       if (error) throw error;
       setComics(data || []);
       setFilteredComics(data || []);
+      if (initialComicId) {
+        const target = (data || []).find(c => c.id === initialComicId);
+        if (target) setSelectedComic(target);
+        onComicConsumed?.();
+      }
     } catch (error) {
       console.error('Error loading comics:', error);
     } finally {
