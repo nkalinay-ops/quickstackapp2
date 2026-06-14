@@ -246,25 +246,41 @@ describe('AddComic — scan limit (free tier)', () => {
 });
 
 describe('AddComic — duplicate detection', () => {
-  it('opens duplicate modal when an existing comic matches series and issue', async () => {
+  it('shows duplicate banner when an existing comic matches series and issue', async () => {
     mockDuplicateResult = makeComic();
     render(<AddComic />);
     await fillForm();
     await userEvent.click(screen.getByRole('button', { name: /Add to Collection/i }));
 
     await waitFor(() => {
+      expect(screen.getByText(/Possible duplicate found/i)).toBeInTheDocument();
+    });
+  });
+
+  it('opens duplicate modal after clicking Review in the duplicate banner', async () => {
+    mockDuplicateResult = makeComic();
+    render(<AddComic />);
+    await fillForm();
+    await userEvent.click(screen.getByRole('button', { name: /Add to Collection/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^Review$/i })).toBeInTheDocument();
+    });
+    await userEvent.click(screen.getByRole('button', { name: /^Review$/i }));
+
+    await waitFor(() => {
       expect(screen.getByText('Duplicate Comic Detected')).toBeInTheDocument();
     });
   });
 
-  it('does NOT open duplicate modal when no existing comic matches', async () => {
+  it('does NOT show duplicate banner when no existing comic matches', async () => {
     mockDuplicateResult = null;
     render(<AddComic />);
     await fillForm();
     await userEvent.click(screen.getByRole('button', { name: /Add to Collection/i }));
 
     await waitFor(() => {
-      expect(screen.queryByText('Duplicate Comic Detected')).toBeNull();
+      expect(screen.queryByText(/Possible duplicate found/i)).toBeNull();
     });
   });
 });

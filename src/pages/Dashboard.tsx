@@ -30,10 +30,10 @@ export function Dashboard({ onNavigate, onNavigateToComic, onNavigateToCollectio
             total: comicsResult.data.length,
             wishlist: wishlistResult.data?.length || 0,
             recentCount: comicsResult.data.filter(c => {
-              const created = new Date(c.created_at);
-              const weekAgo = new Date();
-              weekAgo.setDate(weekAgo.getDate() - 7);
-              return created > weekAgo;
+              const weekStart = new Date();
+              weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+              weekStart.setHours(0, 0, 0, 0);
+              return new Date(c.created_at) >= weekStart;
             }).length,
           });
           setRecentComics(comicsResult.data.slice(0, 5));
