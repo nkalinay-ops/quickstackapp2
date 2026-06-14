@@ -760,78 +760,6 @@ export function AddComic() {
         </button>
       </div>
 
-      {/* Applied rule banner — shown after OCR auto-corrects a value */}
-      {appliedRuleBanner && (
-        <div className="mb-4 flex items-start gap-3 bg-blue-950 border border-blue-800 rounded-lg px-4 py-3">
-          <Wand2 size={16} className="text-blue-400 mt-0.5 shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm text-blue-200">
-              Auto-corrected using your saved rule: <span className="font-medium">"{appliedRuleBanner.ocr_series}{appliedRuleBanner.ocr_story ? ` / ${appliedRuleBanner.ocr_story}` : ''}{appliedRuleBanner.ocr_publisher ? ` · ${appliedRuleBanner.ocr_publisher}` : ''}"</span> &rarr; <span className="font-medium">"{appliedRuleBanner.corrected_series}{appliedRuleBanner.corrected_story ? ` / ${appliedRuleBanner.corrected_story}` : ''}{appliedRuleBanner.corrected_publisher ? ` · ${appliedRuleBanner.corrected_publisher}` : ''}"</span>
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setSeries(appliedRuleBanner.ocr_series);
-              setStory(appliedRuleBanner.ocr_story);
-              setPublisher(appliedRuleBanner.ocr_publisher);
-              setAppliedRuleBanner(null);
-            }}
-            className="text-xs text-blue-400 hover:text-blue-200 transition-colors shrink-0 underline underline-offset-2"
-          >
-            Undo
-          </button>
-          <button
-            type="button"
-            onClick={() => setAppliedRuleBanner(null)}
-            className="text-blue-500 hover:text-blue-300 transition-colors shrink-0"
-          >
-            <X size={14} />
-          </button>
-        </div>
-      )}
-
-      {/* Rule suggestion banner — shown when occurrence threshold is reached */}
-      {pendingRuleSuggestion && (
-        <div className="mb-4 flex items-start gap-3 bg-amber-950 border border-amber-800 rounded-lg px-4 py-3">
-          <Wand2 size={16} className="text-amber-400 mt-0.5 shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm text-amber-200 font-medium mb-0.5">Save a scan correction rule?</p>
-            <p className="text-xs text-amber-300">
-              You've corrected <span className="font-medium">"{pendingRuleSuggestion.ocr_series}{pendingRuleSuggestion.ocr_story ? ` / ${pendingRuleSuggestion.ocr_story}` : ''}{pendingRuleSuggestion.ocr_publisher ? ` · ${pendingRuleSuggestion.ocr_publisher}` : ''}"</span> to <span className="font-medium">"{pendingRuleSuggestion.corrected_series}{pendingRuleSuggestion.corrected_story ? ` / ${pendingRuleSuggestion.corrected_story}` : ''}{pendingRuleSuggestion.corrected_publisher ? ` · ${pendingRuleSuggestion.corrected_publisher}` : ''}"</span> {pendingRuleSuggestion.occurrence_count} times. QuickStack can apply this automatically from now on.
-            </p>
-          </div>
-          <div className="flex gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={async () => {
-                await supabase
-                  .from('ocr_correction_rules')
-                  .update({ is_confirmed: true, updated_at: new Date().toISOString() })
-                  .eq('id', pendingRuleSuggestion.id);
-                setPendingRuleSuggestion(null);
-              }}
-              className="text-xs bg-amber-700 hover:bg-amber-600 text-white px-3 py-1.5 rounded-md font-medium transition-colors"
-            >
-              Save Rule
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                await supabase
-                  .from('ocr_correction_rules')
-                  .update({ dismissed_at: new Date().toISOString() })
-                  .eq('id', pendingRuleSuggestion.id);
-                setPendingRuleSuggestion(null);
-              }}
-              className="text-xs text-amber-500 hover:text-amber-300 transition-colors"
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Scan / Camera section (collection only) */}
       {mode === 'collection' && (
         <div className="mb-6">
@@ -1208,6 +1136,78 @@ export function AddComic() {
             className="w-full px-4 py-3 bg-gray-900 text-white rounded-lg border border-gray-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
           />
         </div>
+
+        {/* Applied rule banner — shown after OCR auto-corrects a value */}
+        {appliedRuleBanner && (
+          <div className="flex items-start gap-3 bg-blue-950 border border-blue-800 rounded-lg px-4 py-3">
+            <Wand2 size={16} className="text-blue-400 mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-blue-200">
+                Auto-corrected using your saved rule: <span className="font-medium">"{appliedRuleBanner.ocr_series}{appliedRuleBanner.ocr_story ? ` / ${appliedRuleBanner.ocr_story}` : ''}{appliedRuleBanner.ocr_publisher ? ` · ${appliedRuleBanner.ocr_publisher}` : ''}"</span> &rarr; <span className="font-medium">"{appliedRuleBanner.corrected_series}{appliedRuleBanner.corrected_story ? ` / ${appliedRuleBanner.corrected_story}` : ''}{appliedRuleBanner.corrected_publisher ? ` · ${appliedRuleBanner.corrected_publisher}` : ''}"</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSeries(appliedRuleBanner.ocr_series);
+                setStory(appliedRuleBanner.ocr_story);
+                setPublisher(appliedRuleBanner.ocr_publisher);
+                setAppliedRuleBanner(null);
+              }}
+              className="text-xs text-blue-400 hover:text-blue-200 transition-colors shrink-0 underline underline-offset-2"
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              onClick={() => setAppliedRuleBanner(null)}
+              className="text-blue-500 hover:text-blue-300 transition-colors shrink-0"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        {/* Rule suggestion banner — shown when occurrence threshold is reached */}
+        {pendingRuleSuggestion && (
+          <div className="flex items-start gap-3 bg-amber-950 border border-amber-800 rounded-lg px-4 py-3">
+            <Wand2 size={16} className="text-amber-400 mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-amber-200 font-medium mb-0.5">Save a scan correction rule?</p>
+              <p className="text-xs text-amber-300">
+                You've corrected <span className="font-medium">"{pendingRuleSuggestion.ocr_series}{pendingRuleSuggestion.ocr_story ? ` / ${pendingRuleSuggestion.ocr_story}` : ''}{pendingRuleSuggestion.ocr_publisher ? ` · ${pendingRuleSuggestion.ocr_publisher}` : ''}"</span> to <span className="font-medium">"{pendingRuleSuggestion.corrected_series}{pendingRuleSuggestion.corrected_story ? ` / ${pendingRuleSuggestion.corrected_story}` : ''}{pendingRuleSuggestion.corrected_publisher ? ` · ${pendingRuleSuggestion.corrected_publisher}` : ''}"</span> {pendingRuleSuggestion.occurrence_count} times. QuickStack can apply this automatically from now on.
+              </p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={async () => {
+                  await supabase
+                    .from('ocr_correction_rules')
+                    .update({ is_confirmed: true, updated_at: new Date().toISOString() })
+                    .eq('id', pendingRuleSuggestion.id);
+                  setPendingRuleSuggestion(null);
+                }}
+                className="text-xs bg-amber-700 hover:bg-amber-600 text-white px-3 py-1.5 rounded-md font-medium transition-colors"
+              >
+                Save Rule
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await supabase
+                    .from('ocr_correction_rules')
+                    .update({ dismissed_at: new Date().toISOString() })
+                    .eq('id', pendingRuleSuggestion.id);
+                  setPendingRuleSuggestion(null);
+                }}
+                className="text-xs text-amber-500 hover:text-amber-300 transition-colors"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
 
         {duplicateComic && !showDuplicateModal && (
           <div className="flex items-start gap-3 bg-amber-950 border border-amber-700 rounded-lg px-4 py-3">
