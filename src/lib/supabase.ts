@@ -57,8 +57,10 @@ export type OcrCorrectionRule = {
   user_id: string;
   ocr_series: string;
   ocr_story: string;
+  ocr_publisher: string;
   corrected_series: string;
   corrected_story: string;
+  corrected_publisher: string;
   occurrence_count: number;
   is_confirmed: boolean;
   dismissed_at: string | null;

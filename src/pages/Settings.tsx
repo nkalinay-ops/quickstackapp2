@@ -80,6 +80,28 @@ export function Settings() {
     await loadScanRulesData();
   };
 
+  const getRuleFieldBadges = (rule: OcrCorrectionRule): string[] => {
+    const fields: string[] = [];
+    if (rule.ocr_series.trim().toLowerCase() !== rule.corrected_series.trim().toLowerCase()) fields.push('Series');
+    if ((rule.ocr_story || '').trim().toLowerCase() !== (rule.corrected_story || '').trim().toLowerCase()) fields.push('Story');
+    if ((rule.ocr_publisher || '').trim().toLowerCase() !== (rule.corrected_publisher || '').trim().toLowerCase()) fields.push('Publisher');
+    return fields;
+  };
+
+  const buildRuleOcrLabel = (rule: OcrCorrectionRule): string => {
+    let label = rule.ocr_series;
+    if (rule.ocr_story) label += ` / ${rule.ocr_story}`;
+    if (rule.ocr_publisher) label += ` · ${rule.ocr_publisher}`;
+    return label;
+  };
+
+  const buildRuleCorrectedLabel = (rule: OcrCorrectionRule): string => {
+    let label = rule.corrected_series;
+    if (rule.corrected_story) label += ` / ${rule.corrected_story}`;
+    if (rule.corrected_publisher) label += ` · ${rule.corrected_publisher}`;
+    return label;
+  };
+
   const handleSaveThreshold = async () => {
     if (!user) return;
     setThresholdSaving(true);
@@ -337,20 +359,27 @@ export function Settings() {
                     ) : (
                       <div className="space-y-2">
                         {correctionRules.map(rule => (
-                          <div key={rule.id} className="flex items-center gap-3 bg-gray-800 rounded-lg px-3 py-2.5">
-                            <div className="flex-1 min-w-0 text-sm">
-                              <span className="text-gray-400">"{rule.ocr_series}{rule.ocr_story ? ` / ${rule.ocr_story}` : ''}"</span>
-                              <span className="text-gray-600 mx-2">&rarr;</span>
-                              <span className="text-white font-medium">"{rule.corrected_series}{rule.corrected_story ? ` / ${rule.corrected_story}` : ''}"</span>
+                          <div key={rule.id} className="bg-gray-800 rounded-lg px-3 py-2.5">
+                            <div className="flex items-start gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex flex-wrap gap-1 mb-1.5">
+                                  {getRuleFieldBadges(rule).map(f => (
+                                    <span key={f} className="text-xs bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">{f}</span>
+                                  ))}
+                                </div>
+                                <span className="text-sm text-gray-400">"{buildRuleOcrLabel(rule)}"</span>
+                                <span className="text-gray-600 mx-2">&rarr;</span>
+                                <span className="text-sm text-white font-medium">"{buildRuleCorrectedLabel(rule)}"</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteRule(rule)}
+                                className="text-gray-500 hover:text-red-400 transition-colors shrink-0 mt-0.5"
+                                aria-label="Delete rule"
+                              >
+                                <Trash2 size={15} />
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteRule(rule)}
-                              className="text-gray-500 hover:text-red-400 transition-colors shrink-0"
-                              aria-label="Delete rule"
-                            >
-                              <Trash2 size={15} />
-                            </button>
                           </div>
                         ))}
                       </div>
@@ -366,29 +395,36 @@ export function Settings() {
                       </h3>
                       <div className="space-y-2">
                         {pendingRules.map(rule => (
-                          <div key={rule.id} className="flex items-center gap-3 bg-gray-800/60 border border-gray-700 rounded-lg px-3 py-2.5">
-                            <div className="flex-1 min-w-0 text-sm">
-                              <span className="text-gray-400">"{rule.ocr_series}{rule.ocr_story ? ` / ${rule.ocr_story}` : ''}"</span>
-                              <span className="text-gray-600 mx-2">&rarr;</span>
-                              <span className="text-gray-200">"{rule.corrected_series}{rule.corrected_story ? ` / ${rule.corrected_story}` : ''}"</span>
-                              <span className="ml-2 text-xs text-gray-500">{rule.occurrence_count}x</span>
-                            </div>
-                            <div className="flex gap-2 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => handleConfirmRule(rule)}
-                                className="text-xs bg-blue-700 hover:bg-blue-600 text-white px-2.5 py-1 rounded-md font-medium transition-colors"
-                              >
-                                Confirm
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteRule(rule)}
-                                className="text-gray-500 hover:text-red-400 transition-colors"
-                                aria-label="Delete pattern"
-                              >
-                                <Trash2 size={15} />
-                              </button>
+                          <div key={rule.id} className="bg-gray-800/60 border border-gray-700 rounded-lg px-3 py-2.5">
+                            <div className="flex items-start gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex flex-wrap gap-1 mb-1.5">
+                                  {getRuleFieldBadges(rule).map(f => (
+                                    <span key={f} className="text-xs bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded">{f}</span>
+                                  ))}
+                                  <span className="text-xs text-gray-500 ml-1">{rule.occurrence_count}x</span>
+                                </div>
+                                <span className="text-sm text-gray-400">"{buildRuleOcrLabel(rule)}"</span>
+                                <span className="text-gray-600 mx-2">&rarr;</span>
+                                <span className="text-sm text-gray-200">"{buildRuleCorrectedLabel(rule)}"</span>
+                              </div>
+                              <div className="flex gap-2 shrink-0 mt-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirmRule(rule)}
+                                  className="text-xs bg-blue-700 hover:bg-blue-600 text-white px-2.5 py-1 rounded-md font-medium transition-colors"
+                                >
+                                  Confirm
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteRule(rule)}
+                                  className="text-gray-500 hover:text-red-400 transition-colors"
+                                  aria-label="Delete pattern"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </div>
                             </div>
                           </div>
                         ))}

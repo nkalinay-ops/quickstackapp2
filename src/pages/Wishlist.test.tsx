@@ -135,24 +135,28 @@ describe('Wishlist — priority badge colors', () => {
     mockWishlistData = [makeItem({ id: 'h1', priority: 'High' })];
     render(<Wishlist />);
     await waitForLoad();
-    const badge = screen.getByText('High');
-    expect(badge.className).toContain('text-red-400');
+    // The badge is a <span>; filter buttons are <button> — query by role to be specific
+    const badges = screen.getAllByText('High').filter(el => el.tagName === 'SPAN');
+    expect(badges).toHaveLength(1);
+    expect(badges[0].className).toContain('text-red-400');
   });
 
   it('renders Medium priority item with yellow badge', async () => {
     mockWishlistData = [makeItem({ id: 'm1', priority: 'Medium' })];
     render(<Wishlist />);
     await waitForLoad();
-    const badge = screen.getByText('Medium');
-    expect(badge.className).toContain('text-yellow-400');
+    const badges = screen.getAllByText('Medium').filter(el => el.tagName === 'SPAN');
+    expect(badges).toHaveLength(1);
+    expect(badges[0].className).toContain('text-yellow-400');
   });
 
   it('renders Low priority item with green badge', async () => {
     mockWishlistData = [makeItem({ id: 'l1', priority: 'Low' })];
     render(<Wishlist />);
     await waitForLoad();
-    const badge = screen.getByText('Low');
-    expect(badge.className).toContain('text-green-400');
+    const badges = screen.getAllByText('Low').filter(el => el.tagName === 'SPAN');
+    expect(badges).toHaveLength(1);
+    expect(badges[0].className).toContain('text-green-400');
   });
 });
 
