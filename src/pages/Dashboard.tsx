@@ -6,9 +6,10 @@ import { BookOpen, Heart, TrendingUp, ChevronRight } from 'lucide-react';
 type DashboardProps = {
   onNavigate: (page: string) => void;
   onNavigateToComic: (comicId: string) => void;
+  onNavigateToCollection: (mode: 'all' | 'week') => void;
 };
 
-export function Dashboard({ onNavigate, onNavigateToComic }: DashboardProps) {
+export function Dashboard({ onNavigate, onNavigateToComic, onNavigateToCollection }: DashboardProps) {
   const { user } = useAuth();
   const [stats, setStats] = useState({ total: 0, wishlist: 0, recentCount: 0 });
   const [recentComics, setRecentComics] = useState<Comic[]>([]);
@@ -72,7 +73,7 @@ export function Dashboard({ onNavigate, onNavigateToComic }: DashboardProps) {
           label="Total Comics"
           value={stats.total}
           color="blue"
-          onClick={() => onNavigate('collection')}
+          onClick={() => onNavigateToCollection('all')}
         />
         <StatCard
           icon={<Heart size={24} />}
@@ -86,7 +87,7 @@ export function Dashboard({ onNavigate, onNavigateToComic }: DashboardProps) {
           label="This Week"
           value={stats.recentCount}
           color="green"
-          onClick={() => onNavigate('collection')}
+          onClick={() => onNavigateToCollection('week')}
         />
       </div>
 

@@ -36,9 +36,17 @@ function AppContent() {
 
   const [currentPage, setCurrentPage] = useState<Page>(getInitialPage());
   const [preSelectComicId, setPreSelectComicId] = useState<string | null>(null);
+  const [collectionInitialMode, setCollectionInitialMode] = useState<'all' | 'week' | null>(null);
 
   const navigateToComic = (comicId: string) => {
     setPreSelectComicId(comicId);
+    setCollectionInitialMode(null);
+    setCurrentPage('collection');
+  };
+
+  const navigateToCollection = (mode: 'all' | 'week') => {
+    setCollectionInitialMode(mode);
+    setPreSelectComicId(null);
     setCurrentPage('collection');
   };
 
@@ -91,8 +99,8 @@ function AppContent() {
 
   return (
     <Layout currentPage={currentPage as LayoutPage} onNavigate={(p) => setCurrentPage(p)}>
-      {currentPage === 'dashboard' && <Dashboard onNavigate={(p) => setCurrentPage(p as Page)} onNavigateToComic={navigateToComic} />}
-      {currentPage === 'collection' && <Collection initialComicId={preSelectComicId} onComicConsumed={() => setPreSelectComicId(null)} />}
+      {currentPage === 'dashboard' && <Dashboard onNavigate={(p) => setCurrentPage(p as Page)} onNavigateToComic={navigateToComic} onNavigateToCollection={navigateToCollection} />}
+      {currentPage === 'collection' && <Collection initialComicId={preSelectComicId} onComicConsumed={() => setPreSelectComicId(null)} initialMode={collectionInitialMode} onModeConsumed={() => setCollectionInitialMode(null)} />}
       {currentPage === 'add' && <AddComic />}
       {currentPage === 'wishlist' && <Wishlist />}
       {currentPage === 'settings' && <Settings />}
