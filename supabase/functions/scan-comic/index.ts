@@ -155,7 +155,7 @@ Rules:
                 type: "image_url",
                 image_url: {
                   url: imageData,
-                  detail: "auto"
+                  detail: "high"
                 }
               }
             ]
