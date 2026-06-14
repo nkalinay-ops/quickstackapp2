@@ -121,7 +121,12 @@ function issueRange(comics: Comic[]): string {
   return `#${nums[0]} – #${nums[nums.length - 1]}`;
 }
 
-export function Collection() {
+export function Collection({ initialComicId, onComicConsumed, initialMode, onModeConsumed }: {
+  initialComicId?: string | null;
+  onComicConsumed?: () => void;
+  initialMode?: 'all' | 'week' | null;
+  onModeConsumed?: () => void;
+}) {
   const { user } = useAuth();
   const [comics, setComics] = useState<Comic[]>([]);
   const [filteredComics, setFilteredComics] = useState<Comic[]>([]);
@@ -147,6 +152,7 @@ export function Collection() {
   });
   const [showCamera, setShowCamera] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [weekFilterActive, setWeekFilterActive] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -155,18 +161,33 @@ export function Collection() {
 
   useEffect(() => {
     if (!searchQuery) {
-      setFilteredComics(comics);
+      if (weekFilterActive) {
+        const weekStart = new Date();
+        weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+        weekStart.setHours(0, 0, 0, 0);
+        setFilteredComics(comics.filter(c => new Date(c.created_at) >= weekStart));
+      } else {
+        setFilteredComics(comics);
+      }
       return;
     }
     const query = searchQuery.toLowerCase();
-    setFilteredComics(comics.filter(
+    const base = weekFilterActive
+      ? (() => {
+          const weekStart = new Date();
+          weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+          weekStart.setHours(0, 0, 0, 0);
+          return comics.filter(c => new Date(c.created_at) >= weekStart);
+        })()
+      : comics;
+    setFilteredComics(base.filter(
       (comic) =>
         comic.series.toLowerCase().includes(query) ||
         comic.story.toLowerCase().includes(query) ||
         comic.issue_number.toLowerCase().includes(query) ||
         comic.publisher.toLowerCase().includes(query)
     ));
-  }, [searchQuery, comics]);
+  }, [searchQuery, comics, weekFilterActive]);
 
   const loadComics = async () => {
     try {
@@ -178,6 +199,22 @@ export function Collection() {
       if (error) throw error;
       setComics(data || []);
       setFilteredComics(data || []);
+      if (initialComicId) {
+        const target = (data || []).find(c => c.id === initialComicId);
+        if (target) setSelectedComic(target);
+        onComicConsumed?.();
+      } else if (initialMode === 'all') {
+        setBrowseMode('all');
+        onModeConsumed?.();
+      } else if (initialMode === 'week') {
+        const weekStart = new Date();
+        weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+        weekStart.setHours(0, 0, 0, 0);
+        setBrowseMode('all');
+        setFilteredComics((data || []).filter(c => new Date(c.created_at) >= weekStart));
+        setWeekFilterActive(true);
+        onModeConsumed?.();
+      }
     } catch (error) {
       console.error('Error loading comics:', error);
     } finally {
@@ -379,6 +416,7 @@ export function Collection() {
   const switchMode = (mode: BrowseMode) => {
     setBrowseMode(mode);
     setSearchQuery('');
+    setWeekFilterActive(false);
     if (mode === 'publisher') {
       resetBrowse();
     } else if (mode === 'series') {
@@ -1211,14 +1249,43 @@ export function Collection() {
 
   // ── Flat all-comics list ──────────────────────────────────────────────────
 
-  const renderAllComics = () => (
+  const renderAllComics = () => {
+    const weekStart = weekFilterActive ? (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - d.getDay());
+      d.setHours(0, 0, 0, 0);
+      return d;
+    })() : null;
+
+    return (
     <>
+      {weekFilterActive && weekStart && (
+        <div className="flex items-center justify-between bg-green-950 border border-green-800 rounded-lg px-4 py-2.5 mb-3">
+          <div>
+            <span className="text-green-300 text-sm font-medium">Added this week</span>
+            <span className="text-green-500 text-xs ml-2">
+              Since {weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </span>
+          </div>
+          <button
+            onClick={() => { setWeekFilterActive(false); setSearchQuery(''); }}
+            className="p-1 text-green-500 hover:text-green-300 transition-colors"
+            aria-label="Clear week filter"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
       {filteredComics.length === 0 ? (
         <div className="bg-gray-900 rounded-lg p-8 text-center">
           <p className="text-gray-400 mb-2">
-            {searchQuery ? 'No comics match your search' : 'Your collection is empty'}
+            {searchQuery
+              ? 'No comics match your search'
+              : weekFilterActive
+                ? 'No comics added this week'
+                : 'Your collection is empty'}
           </p>
-          {!searchQuery && (
+          {!searchQuery && !weekFilterActive && (
             <p className="text-gray-500 text-sm">Start adding comics to build your collection</p>
           )}
         </div>
@@ -1240,7 +1307,8 @@ export function Collection() {
         </div>
       )}
     </>
-  );
+    );
+  };
 
   // ── Root render ───────────────────────────────────────────────────────────
 

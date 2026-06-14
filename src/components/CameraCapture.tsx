@@ -14,6 +14,8 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
   const [error, setError] = useState<string>('');
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [capturing, setCapturing] = useState(false);
+  const [showFlash, setShowFlash] = useState(false);
 
   useEffect(() => {
     startCamera();
@@ -47,22 +49,39 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
   };
 
   const capturePhoto = () => {
-    if (!videoRef.current || !canvasRef.current) return;
+    if (!videoRef.current || !canvasRef.current || capturing) return;
 
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
+    setCapturing(true);
+    setShowFlash(true);
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    // Hide the flash overlay after a short animation, then grab the frame.
+    // The delay lets the hand movement from tapping settle before the frame
+    // is grabbed, so edge detection works on a stable image.
+    setTimeout(() => {
+      setShowFlash(false);
 
-    const context = canvas.getContext('2d');
-    if (!context) return;
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      if (!video || !canvas) {
+        setCapturing(false);
+        return;
+      }
 
-    context.drawImage(video, 0, 0);
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
 
-    const imageDataUrl = canvas.toDataURL('image/jpeg', 0.95);
-    stopCamera();
-    setCapturedImage(imageDataUrl);
+      const context = canvas.getContext('2d');
+      if (!context) {
+        setCapturing(false);
+        return;
+      }
+
+      context.drawImage(video, 0, 0);
+      const imageDataUrl = canvas.toDataURL('image/jpeg', 0.95);
+      stopCamera();
+      setCapturedImage(imageDataUrl);
+      setCapturing(false);
+    }, 600);
   };
 
   const handleCropComplete = (croppedImageDataUrl: string) => {
@@ -136,8 +155,15 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
               </div>
             </div>
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent p-6 text-center">
-              <p className="text-white text-sm mb-2">Position comic cover within frame</p>
+              {capturing ? (
+                <p className="text-blue-300 text-sm font-medium animate-pulse">Hold still…</p>
+              ) : (
+                <p className="text-white text-sm mb-2">Position comic cover within frame</p>
+              )}
             </div>
+            {showFlash && (
+              <div className="absolute inset-0 bg-white animate-[flash_0.3s_ease-out_forwards] pointer-events-none" />
+            )}
           </>
         )}
       </div>
@@ -146,7 +172,8 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
         <div className="p-6 bg-gray-900 flex justify-center">
           <button
             onClick={capturePhoto}
-            className="w-20 h-20 bg-blue-600 hover:bg-blue-700 rounded-full flex items-center justify-center transition-colors shadow-lg"
+            disabled={capturing}
+            className="w-20 h-20 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-full flex items-center justify-center transition-colors shadow-lg"
           >
             <Camera size={32} className="text-white" />
           </button>

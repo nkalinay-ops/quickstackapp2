@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { X, Copy, Plus } from 'lucide-react';
 import { Comic } from '../lib/supabase';
 
@@ -22,6 +23,12 @@ export default function DuplicateModal({
   onAddAsSeparate,
   isProcessing,
 }: DuplicateModalProps) {
+  useEffect(() => {
+    if (!isOpen) return;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (

@@ -239,33 +239,33 @@ export function Wishlist() {
             />
           </div>
 
-          {/* Priority filter + Sort row */}
-          <div className="flex items-center gap-2 mb-3 flex-wrap">
-            <div className="flex gap-1">
-              {(['All', 'High', 'Medium', 'Low'] as const).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPriorityFilter(p)}
-                  className={`text-xs px-3 py-1.5 rounded border font-medium transition-colors ${
-                    priorityFilter === p ? priorityFilterColors[p] : priorityFilterInactive[p]
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-            <div className="ml-auto flex items-center gap-1.5">
-              <ArrowUpDown size={14} className="text-gray-500" />
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as SortOption)}
-                className="bg-gray-900 text-gray-300 text-xs border border-gray-800 rounded px-2 py-1.5 focus:outline-none focus:border-blue-500 cursor-pointer"
+          {/* Priority filter row */}
+          <div className="flex gap-1 mb-2">
+            {(['All', 'High', 'Medium', 'Low'] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPriorityFilter(p)}
+                className={`text-xs px-3 py-1.5 rounded border font-medium transition-colors ${
+                  priorityFilter === p ? priorityFilterColors[p] : priorityFilterInactive[p]
+                }`}
               >
-                {(Object.keys(SORT_LABELS) as SortOption[]).map((key) => (
-                  <option key={key} value={key}>{SORT_LABELS[key]}</option>
-                ))}
-              </select>
-            </div>
+                {p}
+              </button>
+            ))}
+          </div>
+
+          {/* Sort row */}
+          <div className="flex items-center justify-end gap-1.5 mb-3">
+            <ArrowUpDown size={14} className="text-gray-500" />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as SortOption)}
+              className="bg-gray-900 text-gray-300 text-xs border border-gray-800 rounded px-2 py-1.5 focus:outline-none focus:border-blue-500 cursor-pointer"
+            >
+              {(Object.keys(SORT_LABELS) as SortOption[]).map((key) => (
+                <option key={key} value={key}>{SORT_LABELS[key]}</option>
+              ))}
+            </select>
           </div>
 
           {/* Count */}
