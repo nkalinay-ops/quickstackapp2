@@ -1,4 +1,4 @@
-package quickstackapp.com;
+package com.quickstack.app;
 
 import com.getcapacitor.BridgeActivity;
 
