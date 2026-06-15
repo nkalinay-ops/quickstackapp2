@@ -443,7 +443,7 @@ export function Settings() {
             QuickStack is a mobile-first comic book collection tracker designed for speed and simplicity.
             Add comics to your collection in under 5 seconds.
           </p>
-          <div className="text-xs text-gray-500 mb-4">Version 1.0.0</div>
+          <div className="text-xs text-gray-500 mb-4">Version 1.0.7</div>
           <div className="border-t border-gray-800 pt-3 space-y-1">
             <button
               type="button"
