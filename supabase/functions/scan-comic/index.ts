@@ -100,6 +100,22 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Fetch confirmed OCR correction rules for this user (cap at 20 to bound token cost)
+    const { data: correctionRules } = await userClient
+      .from("ocr_correction_rules")
+      .select("ocr_series, ocr_story, ocr_publisher, corrected_series, corrected_story, corrected_publisher")
+      .eq("is_confirmed", true)
+      .limit(20);
+
+    const correctionRulesBlock = correctionRules && correctionRules.length > 0
+      ? `\n\nKnown correction patterns for this user (apply these automatically if you see the OCR text on the left):\n` +
+        correctionRules.map(r => {
+          const from = [r.ocr_series, r.ocr_story, r.ocr_publisher].filter(Boolean).join(" / ");
+          const to = [r.corrected_series, r.corrected_story, r.corrected_publisher].filter(Boolean).join(" / ");
+          return `- "${from}" → "${to}"`;
+        }).join("\n")
+      : "";
+
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -111,7 +127,7 @@ Deno.serve(async (req: Request) => {
         messages: [
           {
             role: "system",
-            content: `You are an expert at reading comic book covers. Respond with valid JSON only — no text before or after.
+            content: `You are an expert at reading comic book covers and comic book publishing history. Respond with valid JSON only — no text before or after.
 
 Response format:
 {
@@ -141,15 +157,17 @@ Rules:
 2. Issue numbers and totals: always output digits. Convert all written-out cardinals/ordinals.
 3. Cover variant letters map to numbers: A=1, B=2, C=3, D=4, etc.
 4. cover_price: strip the currency symbol and return only the numeric value.
-5. If the image is unclear, return JSON with empty strings/nulls and "low" confidence.
-6. NEVER respond with explanatory text — ONLY valid JSON.`
+5. cover_price location: look carefully at the LOWER-LEFT and LOWER-RIGHT corners of the cover. The price is printed in a small box near the UPC barcode, typically in 6-8pt font (very small). Common formats: "$3.99", "£2.50", "€4.00". Do not confuse the price with the issue number.
+6. issue_number location: often printed near the title banner at the top, or in a small badge/circle on the cover. Also check for patterns like "#300", "No. 300", "Issue 300".
+7. If the image is unclear, return JSON with empty strings/nulls and "low" confidence.
+8. NEVER respond with explanatory text — ONLY valid JSON.` + correctionRulesBlock
           },
           {
             role: "user",
             content: [
               {
                 type: "text",
-                text: `Extract all readable text from this comic book cover: series name, story/arc subtitle, issue number (digits only), publisher, year, total issues in arc if shown, any cover variant label, and the printed cover price if visible.`
+                text: `Extract all readable text from this comic book cover: series name, story/arc subtitle, issue number (digits only), publisher, year, total issues in arc if shown, any cover variant label, and the printed cover price if visible. Pay special attention to the corners — the cover price is almost always in the lower-left or lower-right corner near the barcode in very small print.`
               },
               {
                 type: "image_url",
