@@ -69,6 +69,12 @@ export function AddComic() {
     scanButtonRef.current?.focus();
   };
 
+  const openCamera = () => {
+    fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scan-comic`, { method: 'OPTIONS' })
+      .catch(() => {});
+    setShowCamera(true);
+  };
+
   useEffect(() => {
     scanButtonRef.current?.focus();
   }, []);
@@ -146,9 +152,10 @@ export function AddComic() {
     else setPendingRuleSuggestion(null);
 
     try {
-      const optimized = await optimizeImageForOCR(imageDataUrl);
-
-      const { data: { session } } = await supabase.auth.getSession();
+      const [optimized, { data: { session } }] = await Promise.all([
+        optimizeImageForOCR(imageDataUrl),
+        supabase.auth.getSession(),
+      ]);
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scan-comic`;
       const headers = {
         'Authorization': `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY}`,
@@ -807,7 +814,7 @@ export function AddComic() {
               <button
                 ref={scanButtonRef}
                 type="button"
-                onClick={() => setShowCamera(true)}
+                onClick={openCamera}
                 disabled={scanning || scanLimitReached}
                 className="w-full py-4 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
@@ -860,7 +867,7 @@ export function AddComic() {
               <button
                 ref={scanButtonRef}
                 type="button"
-                onClick={() => setShowCamera(true)}
+                onClick={openCamera}
                 disabled={scanning || scanLimitReached}
                 className="w-full py-4 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
