@@ -7,8 +7,8 @@ export interface OptimizedImage {
 
 export async function optimizeImageForOCR(
   imageDataUrl: string,
-  maxWidth: number = 1024,
-  quality: number = 0.92
+  maxWidth: number = 2048,
+  quality: number = 0.97
 ): Promise<OptimizedImage> {
   return new Promise((resolve, reject) => {
     const img = new Image();

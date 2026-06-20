@@ -14,7 +14,7 @@ const todayEST = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Ameri
 type Mode = 'collection' | 'wishlist';
 
 export function AddComic() {
-  const { user, userTier } = useAuth();
+  const { user, session, userTier } = useAuth();
   const [mode, setMode] = useState<Mode>('collection');
 
   // Shared fields
@@ -67,6 +67,12 @@ export function AddComic() {
   const focusScanButton = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     scanButtonRef.current?.focus();
+  };
+
+  const openCamera = () => {
+    fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scan-comic`, { method: 'OPTIONS' })
+      .catch(() => {});
+    setShowCamera(true);
   };
 
   useEffect(() => {
@@ -147,8 +153,6 @@ export function AddComic() {
 
     try {
       const optimized = await optimizeImageForOCR(imageDataUrl);
-
-      const { data: { session } } = await supabase.auth.getSession();
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scan-comic`;
       const headers = {
         'Authorization': `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY}`,
@@ -807,7 +811,7 @@ export function AddComic() {
               <button
                 ref={scanButtonRef}
                 type="button"
-                onClick={() => setShowCamera(true)}
+                onClick={openCamera}
                 disabled={scanning || scanLimitReached}
                 className="w-full py-4 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
@@ -860,7 +864,7 @@ export function AddComic() {
               <button
                 ref={scanButtonRef}
                 type="button"
-                onClick={() => setShowCamera(true)}
+                onClick={openCamera}
                 disabled={scanning || scanLimitReached}
                 className="w-full py-4 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
