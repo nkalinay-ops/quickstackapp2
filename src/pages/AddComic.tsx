@@ -14,7 +14,7 @@ const todayEST = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Ameri
 type Mode = 'collection' | 'wishlist';
 
 export function AddComic() {
-  const { user, userTier } = useAuth();
+  const { user, session, userTier } = useAuth();
   const [mode, setMode] = useState<Mode>('collection');
 
   // Shared fields
@@ -152,10 +152,7 @@ export function AddComic() {
     else setPendingRuleSuggestion(null);
 
     try {
-      const [optimized, { data: { session } }] = await Promise.all([
-        optimizeImageForOCR(imageDataUrl),
-        supabase.auth.getSession(),
-      ]);
+      const optimized = await optimizeImageForOCR(imageDataUrl);
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scan-comic`;
       const headers = {
         'Authorization': `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY}`,

@@ -46,7 +46,11 @@ Deno.serve(async (req: Request) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    const { data: { user }, error: authError } = await userClient.auth.getUser();
+    // Parse body and validate JWT in parallel — body parsing is independent of auth
+    const [{ data: { user }, error: authError }, body] = await Promise.all([
+      userClient.auth.getUser(),
+      req.json(),
+    ]);
 
     if (authError || !user) {
       return new Response(
@@ -55,9 +59,36 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Tier and scan limit check
-    const { data: scanInfo, error: scanInfoError } = await userClient
-      .rpc("get_user_scan_info", { p_user_id: user.id });
+    const { imageData } = body;
+
+    if (!imageData) {
+      return new Response(
+        JSON.stringify({ error: "No image data provided" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
+
+    if (!openaiApiKey) {
+      return new Response(
+        JSON.stringify({ error: "OpenAI API key not configured" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Tier check and correction rules fetch run in parallel — both need user.id, neither blocks the other
+    const [
+      { data: scanInfo, error: scanInfoError },
+      { data: correctionRules },
+    ] = await Promise.all([
+      userClient.rpc("get_user_scan_info", { p_user_id: user.id }),
+      userClient
+        .from("ocr_correction_rules")
+        .select("ocr_series, ocr_story, ocr_publisher, corrected_series, corrected_story, corrected_publisher")
+        .eq("is_confirmed", true)
+        .limit(20),
+    ]);
 
     if (scanInfoError || !scanInfo) {
       return new Response(
@@ -81,31 +112,6 @@ Deno.serve(async (req: Request) => {
         { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    const { imageData } = await req.json();
-
-    if (!imageData) {
-      return new Response(
-        JSON.stringify({ error: "No image data provided" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
-
-    if (!openaiApiKey) {
-      return new Response(
-        JSON.stringify({ error: "OpenAI API key not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Fetch confirmed OCR correction rules for this user (cap at 20 to bound token cost)
-    const { data: correctionRules } = await userClient
-      .from("ocr_correction_rules")
-      .select("ocr_series, ocr_story, ocr_publisher, corrected_series, corrected_story, corrected_publisher")
-      .eq("is_confirmed", true)
-      .limit(20);
 
     const correctionRulesBlock = correctionRules && correctionRules.length > 0
       ? `\n\nKnown correction patterns for this user (apply these automatically if you see the OCR text on the left):\n` +
