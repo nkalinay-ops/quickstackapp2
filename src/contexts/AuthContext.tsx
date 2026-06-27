@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
-import { User } from '@supabase/supabase-js';
+import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { isNativePlatform } from '../lib/capacitorSetup';
 
@@ -7,6 +7,7 @@ export type UserTier = 'free' | 'paid' | 'admin';
 
 type AuthContextType = {
   user: User | null;
+  session: Session | null;
   loading: boolean;
   isAdmin: boolean;
   userTier: UserTier;
@@ -23,6 +24,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [userTier, setUserTier] = useState<UserTier>('free');
@@ -104,6 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (event === 'SIGNED_IN' && !expectingSignIn.current && !isNativePlatform()) {
               await supabase.auth.signOut();
               setUser(null);
+              setSession(null);
               setIsAdmin(false);
               setUserTier('free');
               setLoading(false);
@@ -113,13 +116,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (isTerminated) {
               await supabase.auth.signOut();
               setUser(null);
+              setSession(null);
               setIsAdmin(false);
             } else {
               await fetchAdminStatus(session.user.id);
               setUser(session.user);
+              setSession(session);
             }
           } else {
             setUser(null);
+            setSession(null);
             setIsAdmin(false);
             setUserTier('free');
           }
@@ -230,7 +236,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, isAdmin, userTier, signIn, signUp, signOut, refreshAdminStatus, resetPassword, updatePassword, deleteAccount }}>
+    <AuthContext.Provider value={{ user, session, loading, isAdmin, userTier, signIn, signUp, signOut, refreshAdminStatus, resetPassword, updatePassword, deleteAccount }}>
       {children}
     </AuthContext.Provider>
   );

@@ -16,6 +16,7 @@ interface ComicData {
   total_issues: number | null;
   cover_variant: number | null;
   cover_price: number | null;
+  confidence?: "high" | "medium" | "low";
 }
 
 const FREE_TIER_SCAN_LIMIT = 20;
@@ -46,7 +47,11 @@ Deno.serve(async (req: Request) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    const { data: { user }, error: authError } = await userClient.auth.getUser();
+    // Parse body and validate JWT in parallel — body parsing is independent of auth
+    const [{ data: { user }, error: authError }, body] = await Promise.all([
+      userClient.auth.getUser(),
+      req.json(),
+    ]);
 
     if (authError || !user) {
       return new Response(
@@ -55,9 +60,36 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Tier and scan limit check
-    const { data: scanInfo, error: scanInfoError } = await userClient
-      .rpc("get_user_scan_info", { p_user_id: user.id });
+    const { imageData, barcodeData } = body;
+
+    if (!imageData) {
+      return new Response(
+        JSON.stringify({ error: "No image data provided" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
+
+    if (!openaiApiKey) {
+      return new Response(
+        JSON.stringify({ error: "OpenAI API key not configured" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Tier check and correction rules fetch run in parallel — both need user.id, neither blocks the other
+    const [
+      { data: scanInfo, error: scanInfoError },
+      { data: correctionRules },
+    ] = await Promise.all([
+      userClient.rpc("get_user_scan_info", { p_user_id: user.id }),
+      userClient
+        .from("ocr_correction_rules")
+        .select("ocr_series, ocr_story, ocr_publisher, corrected_series, corrected_story, corrected_publisher")
+        .eq("is_confirmed", true)
+        .limit(20),
+    ]);
 
     if (scanInfoError || !scanInfo) {
       return new Response(
@@ -82,36 +114,19 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { imageData } = await req.json();
+    const correctionRulesBlock = correctionRules && correctionRules.length > 0
+      ? `\n\nKnown correction patterns for this user (apply these automatically if you see the OCR text on the left):\n` +
+        correctionRules.map(r => {
+          const from = [r.ocr_series, r.ocr_story, r.ocr_publisher].filter(Boolean).join(" / ");
+          const to = [r.corrected_series, r.corrected_story, r.corrected_publisher].filter(Boolean).join(" / ");
+          return `- "${from}" → "${to}"`;
+        }).join("\n")
+      : "";
 
-    if (!imageData) {
-      return new Response(
-        JSON.stringify({ error: "No image data provided" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
-
-    if (!openaiApiKey) {
-      return new Response(
-        JSON.stringify({ error: "OpenAI API key not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${openaiApiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content: `You are an expert at reading comic book covers. Respond with valid JSON only — no text before or after.
+    const ocrMessages = [
+      {
+        role: "system",
+        content: `You are an expert at reading comic book covers and comic book publishing history. Respond with valid JSON only — no text before or after.
 
 Response format:
 {
@@ -141,54 +156,67 @@ Rules:
 2. Issue numbers and totals: always output digits. Convert all written-out cardinals/ordinals.
 3. Cover variant letters map to numbers: A=1, B=2, C=3, D=4, etc.
 4. cover_price: strip the currency symbol and return only the numeric value.
-5. If the image is unclear, return JSON with empty strings/nulls and "low" confidence.
-6. NEVER respond with explanatory text — ONLY valid JSON.`
+5. cover_price location: look carefully at the LOWER-LEFT and LOWER-RIGHT corners of the cover. The price is printed in a small box near the UPC barcode, typically in 6-8pt font (very small). Common formats: "$3.99", "£2.50", "€4.00". Do not confuse the price with the issue number.
+6. issue_number location: often printed near the title banner at the top, or in a small badge/circle on the cover. Also check for patterns like "#300", "No. 300", "Issue 300".
+7. If the image is unclear, return JSON with empty strings/nulls and "low" confidence.
+8. NEVER respond with explanatory text — ONLY valid JSON.` + correctionRulesBlock,
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: `Extract all readable text from this comic book cover: series name, story/arc subtitle, issue number (digits only), publisher, year, total issues in arc if shown, any cover variant label, and the printed cover price if visible. Pay special attention to the corners — the cover price is almost always in the lower-left or lower-right corner near the barcode in very small print.${barcodeData ? `\n\nThe UPC barcode scanned from this cover reads: ${barcodeData}. Use this as additional context to help verify the issue number.` : ''}`
           },
           {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: `Extract all readable text from this comic book cover: series name, story/arc subtitle, issue number (digits only), publisher, year, total issues in arc if shown, any cover variant label, and the printed cover price if visible.`
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: imageData,
-                  detail: "high"
-                }
-              }
-            ]
+            type: "image_url",
+            image_url: {
+              url: imageData,
+              detail: "high"
+            }
           }
         ],
+      },
+    ];
+
+    // First pass: gpt-4o-mini (fast path ~1-2s)
+    const miniResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${openaiApiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: ocrMessages,
         max_tokens: 300,
-        temperature: 0.1,
+        temperature: 0,
         response_format: { type: "json_object" },
       }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("OpenAI API error:", response.status, errorText);
+    if (!miniResponse.ok) {
+      const errorText = await miniResponse.text();
+      console.error("OpenAI API error:", miniResponse.status, errorText);
       return new Response(
         JSON.stringify({
           error: "Failed to analyze image",
-          detail: `OpenAI API returned ${response.status}`,
+          detail: `OpenAI API returned ${miniResponse.status}`,
           openaiError: errorText.substring(0, 200)
         }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const data = await response.json();
-    console.log("OpenAI response data:", JSON.stringify(data));
+    const miniData = await miniResponse.json();
+    console.log("OpenAI mini response:", JSON.stringify(miniData));
 
-    const message = data.choices?.[0]?.message;
-    const content = message?.content;
-    const refusal = message?.refusal;
+    const miniMessage = miniData.choices?.[0]?.message;
+    const miniContent = miniMessage?.content;
+    const miniRefusal = miniMessage?.refusal;
 
-    if (refusal) {
-      console.error("OpenAI refused request:", refusal);
+    if (miniRefusal) {
+      console.error("OpenAI refused request:", miniRefusal);
       return new Response(
         JSON.stringify({
           error: "Unable to process image",
@@ -198,13 +226,13 @@ Rules:
       );
     }
 
-    if (!content) {
-      console.error("No content in OpenAI response:", JSON.stringify(data));
+    if (!miniContent) {
+      console.error("No content in OpenAI mini response:", JSON.stringify(miniData));
       return new Response(
         JSON.stringify({
           error: "No content in response",
           detail: "OpenAI returned an empty response",
-          debugInfo: JSON.stringify(data).substring(0, 200)
+          debugInfo: JSON.stringify(miniData).substring(0, 200)
         }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -212,35 +240,115 @@ Rules:
 
     let comicData: ComicData;
     try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        comicData = JSON.parse(jsonMatch[0]);
-      } else {
-        comicData = JSON.parse(content);
-      }
-    } catch (parseError) {
-      console.error("Failed to parse JSON:", content);
+      const miniMatch = miniContent.match(/\{[\s\S]*\}/);
+      comicData = JSON.parse(miniMatch ? miniMatch[0] : miniContent);
+    } catch {
+      // Mini parse failed — treat as low confidence so gpt-4o fallback runs
+      comicData = { series: "", story: "", issue_number: "", publisher: "", year: null, total_issues: null, cover_variant: null, cover_price: null, confidence: "low" };
+    }
 
-      if (content.toLowerCase().includes('unable') ||
-          content.toLowerCase().includes('cannot') ||
-          content.toLowerCase().includes('no text') ||
-          content.toLowerCase().includes('not visible')) {
+    // Gate: fall back to gpt-4o if mini wasn't confident or missed the core identifying fields
+    const needsFallback =
+      comicData.confidence !== "high" ||
+      !comicData.series ||
+      !comicData.issue_number;
+
+    if (needsFallback) {
+      console.log("gpt-4o-mini gate failed — falling back to gpt-4o");
+
+      const fullResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${openaiApiKey}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          messages: ocrMessages,
+          max_tokens: 300,
+          temperature: 0,
+          response_format: { type: "json_object" },
+        }),
+      });
+
+      if (!fullResponse.ok) {
+        const errorText = await fullResponse.text();
+        console.error("OpenAI gpt-4o API error:", fullResponse.status, errorText);
         return new Response(
           JSON.stringify({
-            error: "Unable to read comic cover. Please ensure the image is clear, well-lit, and the text is visible.",
-            detail: "The AI could not extract text from this image. Try taking another photo with better lighting or angle."
+            error: "Failed to analyze image",
+            detail: `OpenAI API returned ${fullResponse.status}`,
+            openaiError: errorText.substring(0, 200)
+          }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const fullData = await fullResponse.json();
+      console.log("OpenAI gpt-4o response:", JSON.stringify(fullData));
+
+      const fullMessage = fullData.choices?.[0]?.message;
+      const fullContent = fullMessage?.content;
+      const fullRefusal = fullMessage?.refusal;
+
+      if (fullRefusal) {
+        console.error("OpenAI gpt-4o refused request:", fullRefusal);
+        return new Response(
+          JSON.stringify({
+            error: "Unable to process image",
+            detail: "The image could not be analyzed. Please ensure it's a clear photo of a comic book cover."
           }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      return new Response(
-        JSON.stringify({
-          error: "Could not understand the response from the AI. Please try again.",
-          detail: content.substring(0, 200)
-        }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      if (!fullContent) {
+        console.error("No content in OpenAI gpt-4o response:", JSON.stringify(fullData));
+        return new Response(
+          JSON.stringify({
+            error: "No content in response",
+            detail: "OpenAI returned an empty response",
+            debugInfo: JSON.stringify(fullData).substring(0, 200)
+          }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      try {
+        const fullMatch = fullContent.match(/\{[\s\S]*\}/);
+        if (fullMatch) {
+          comicData = JSON.parse(fullMatch[0]);
+        } else {
+          comicData = JSON.parse(fullContent);
+        }
+      } catch (parseError) {
+        console.error("Failed to parse gpt-4o JSON:", fullContent);
+        // Note: fallback increment is NOT fired here — gpt-4o failed so we return an error below
+
+        if (fullContent.toLowerCase().includes('unable') ||
+            fullContent.toLowerCase().includes('cannot') ||
+            fullContent.toLowerCase().includes('no text') ||
+            fullContent.toLowerCase().includes('not visible')) {
+          return new Response(
+            JSON.stringify({
+              error: "Unable to read comic cover. Please ensure the image is clear, well-lit, and the text is visible.",
+              detail: "The AI could not extract text from this image. Try taking another photo with better lighting or angle."
+            }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            error: "Could not understand the response from the AI. Please try again.",
+            detail: fullContent.substring(0, 200)
+          }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // gpt-4o was used and parsed successfully — track the fallback
+      EdgeRuntime.waitUntil(userClient.rpc("increment_gpt4o_fallback_count", { p_user_id: user.id }));
     }
 
     // Fire-and-forget: increment scan count without blocking the response
@@ -266,6 +374,7 @@ Rules:
           monthly_scan_count: newCount,
           scan_limit: tier === "free" ? FREE_TIER_SCAN_LIMIT : null,
           scans_remaining: tier === "free" ? FREE_TIER_SCAN_LIMIT - newCount : null,
+          model_used: needsFallback ? "gpt-4o" : "gpt-4o-mini",
         },
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }

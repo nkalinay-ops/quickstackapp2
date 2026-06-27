@@ -237,7 +237,7 @@ export function ImageCrop({ imageDataUrl, onCropComplete, onCancel }: ImageCropP
     const cropWidth = maxX - minX;
     const cropHeight = maxY - minY;
 
-    const targetWidth = 1200;
+    const targetWidth = 2048;
     const targetHeight = (cropHeight / cropWidth) * targetWidth;
 
     cropCanvas.width = targetWidth;
