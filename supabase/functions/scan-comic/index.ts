@@ -247,12 +247,11 @@ Rules:
       comicData = { series: "", story: "", issue_number: "", publisher: "", year: null, total_issues: null, cover_variant: null, cover_price: null, confidence: "low" };
     }
 
-    // Gate: fall back to gpt-4o if mini missed key fields or wasn't confident
+    // Gate: fall back to gpt-4o if mini wasn't confident or missed the core identifying fields
     const needsFallback =
       comicData.confidence !== "high" ||
       !comicData.series ||
-      !comicData.issue_number ||
-      comicData.cover_price == null;
+      !comicData.issue_number;
 
     if (needsFallback) {
       console.log("gpt-4o-mini gate failed — falling back to gpt-4o");
@@ -324,6 +323,7 @@ Rules:
         }
       } catch (parseError) {
         console.error("Failed to parse gpt-4o JSON:", fullContent);
+        // Note: fallback increment is NOT fired here — gpt-4o failed so we return an error below
 
         if (fullContent.toLowerCase().includes('unable') ||
             fullContent.toLowerCase().includes('cannot') ||
@@ -346,6 +346,9 @@ Rules:
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
+
+      // gpt-4o was used and parsed successfully — track the fallback
+      EdgeRuntime.waitUntil(userClient.rpc("increment_gpt4o_fallback_count", { p_user_id: user.id }));
     }
 
     // Fire-and-forget: increment scan count without blocking the response
@@ -371,6 +374,7 @@ Rules:
           monthly_scan_count: newCount,
           scan_limit: tier === "free" ? FREE_TIER_SCAN_LIMIT : null,
           scans_remaining: tier === "free" ? FREE_TIER_SCAN_LIMIT - newCount : null,
+          model_used: needsFallback ? "gpt-4o" : "gpt-4o-mini",
         },
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
