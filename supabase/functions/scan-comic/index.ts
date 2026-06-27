@@ -190,7 +190,7 @@ Rules:
         model: "gpt-4o-mini",
         messages: ocrMessages,
         max_tokens: 300,
-        temperature: 0.1,
+        temperature: 0,
         response_format: { type: "json_object" },
       }),
     });
@@ -266,7 +266,7 @@ Rules:
           model: "gpt-4o",
           messages: ocrMessages,
           max_tokens: 300,
-          temperature: 0.1,
+          temperature: 0,
           response_format: { type: "json_object" },
         }),
       });
