@@ -60,7 +60,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { imageData } = body;
+    const { imageData, barcodeData } = body;
 
     if (!imageData) {
       return new Response(
@@ -166,7 +166,7 @@ Rules:
         content: [
           {
             type: "text",
-            text: `Extract all readable text from this comic book cover: series name, story/arc subtitle, issue number (digits only), publisher, year, total issues in arc if shown, any cover variant label, and the printed cover price if visible. Pay special attention to the corners — the cover price is almost always in the lower-left or lower-right corner near the barcode in very small print.`
+            text: `Extract all readable text from this comic book cover: series name, story/arc subtitle, issue number (digits only), publisher, year, total issues in arc if shown, any cover variant label, and the printed cover price if visible. Pay special attention to the corners — the cover price is almost always in the lower-left or lower-right corner near the barcode in very small print.${barcodeData ? `\n\nThe UPC barcode scanned from this cover reads: ${barcodeData}. Use this as additional context to help verify the issue number.` : ''}`
           },
           {
             type: "image_url",
