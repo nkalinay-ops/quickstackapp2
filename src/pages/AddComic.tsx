@@ -58,6 +58,7 @@ export function AddComic() {
   const pendingScanNext = useRef(false);
   // Holds a rule suggestion across the camera transition (Scan Next flow)
   const pendingRuleSuggestionRef = useRef<OcrCorrectionRule | null>(null);
+  const speculativeUploadRef = useRef<Promise<{ colorUrl: string; bwUrl: string; colorPath: string; bwPath: string } | null> | null>(null);
   const scanButtonRef = useRef<HTMLButtonElement>(null);
   const seriesInputRef = useRef<HTMLInputElement>(null);
   const addButtonRef = useRef<HTMLButtonElement>(null);
@@ -114,11 +115,43 @@ export function AddComic() {
     // suggestion that was just computed survives the form reset.
   };
 
+  const cleanupSpeculativeUpload = () => {
+    const ref = speculativeUploadRef.current;
+    speculativeUploadRef.current = null;
+    if (ref) {
+      ref.then(result => {
+        if (result) {
+          supabase.storage.from('comic-covers').remove([result.colorPath, result.bwPath]).catch(() => {});
+        }
+      });
+    }
+  };
+
+  const detectBarcode = async (imageDataUrl: string): Promise<string | null> => {
+    if (!('BarcodeDetector' in window)) return null;
+    try {
+      const img = new Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject();
+        img.src = imageDataUrl;
+      });
+      // BarcodeDetector is not in standard TypeScript lib types
+      const detector = new (window as any).BarcodeDetector({ formats: ['upc_a', 'ean_13'] });
+      const barcodes = await detector.detect(img);
+      return (barcodes[0]?.rawValue as string) ?? null;
+    } catch {
+      return null;
+    }
+  };
+
   const switchMode = (newMode: Mode) => {
     setMode(newMode);
     setSuccess(false);
-    // Clear image when switching to wishlist — image upload is collection-only
-    if (newMode === 'wishlist') setCapturedImage(null);
+    if (newMode === 'wishlist') {
+      cleanupSpeculativeUpload();
+      setCapturedImage(null);
+    }
   };
 
   const checkForDuplicates = async (comicSeries: string, comicIssueNumber: string, comicStory = ''): Promise<Comic | null> => {
@@ -152,7 +185,14 @@ export function AddComic() {
     else setPendingRuleSuggestion(null);
 
     try {
-      const optimized = await optimizeImageForOCR(imageDataUrl);
+      // Start speculative upload and barcode detection in parallel with OCR optimization
+      if (mode === 'collection') {
+        speculativeUploadRef.current = uploadImages(imageDataUrl).catch(() => null);
+      }
+      const [optimized, barcodeValue] = await Promise.all([
+        optimizeImageForOCR(imageDataUrl),
+        detectBarcode(imageDataUrl),
+      ]);
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scan-comic`;
       const headers = {
         'Authorization': `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY}`,
@@ -162,7 +202,10 @@ export function AddComic() {
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ imageData: optimized.dataUrl }),
+        body: JSON.stringify({
+          imageData: optimized.dataUrl,
+          ...(barcodeValue ? { barcodeData: barcodeValue } : {}),
+        }),
       });
 
       const result = await response.json();
@@ -189,6 +232,7 @@ export function AddComic() {
           });
         }
         // Clear the captured image on failure so the scan button reappears
+        cleanupSpeculativeUpload();
         setCapturedImage(null);
         return;
       }
@@ -295,6 +339,7 @@ export function AddComic() {
       }
     } catch (error) {
       console.error('Error scanning comic:', error);
+      cleanupSpeculativeUpload();
       setAlertModal({
         isOpen: true,
         title: 'Error',
@@ -329,7 +374,7 @@ export function AddComic() {
     });
   };
 
-  const uploadImages = async (imageDataUrl: string): Promise<{ colorUrl: string; bwUrl: string }> => {
+  const uploadImages = async (imageDataUrl: string): Promise<{ colorUrl: string; bwUrl: string; colorPath: string; bwPath: string }> => {
     if (!user) throw new Error('User not authenticated');
     const fileId = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
@@ -362,7 +407,7 @@ export function AddComic() {
     }
     const { data: bwUrlData } = supabase.storage.from('comic-covers').getPublicUrl(bwData.path);
 
-    return { colorUrl: colorUrlData.publicUrl, bwUrl: bwUrlData.publicUrl };
+    return { colorUrl: colorUrlData.publicUrl, bwUrl: bwUrlData.publicUrl, colorPath: colorFileName, bwPath: bwFileName };
   };
 
   const checkTotalIssuesConflict = async (
@@ -422,9 +467,11 @@ export function AddComic() {
     let colorImageUrl: string | null = null;
     let bwImageUrl: string | null = null;
     if (imageSnapshot) {
-      const { colorUrl, bwUrl } = await uploadImages(imageSnapshot);
-      colorImageUrl = colorUrl;
-      bwImageUrl = bwUrl;
+      const uploaded = await (speculativeUploadRef.current ?? uploadImages(imageSnapshot).catch(() => null));
+      speculativeUploadRef.current = null;
+      if (!uploaded) throw new Error('Image upload failed');
+      colorImageUrl = uploaded.colorUrl;
+      bwImageUrl = uploaded.bwUrl;
     }
     const parsedTotal = totalIssuesVal ? parseInt(totalIssuesVal) : null;
     const conflict = await checkTotalIssuesConflict(seriesVal, storyVal, parsedTotal);
@@ -580,6 +627,7 @@ export function AddComic() {
   const handleDiscardScan = () => {
     setShowDuplicateModal(false);
     setDuplicateComic(null);
+    cleanupSpeculativeUpload();
     resetForm();
   };
 
@@ -771,7 +819,7 @@ export function AddComic() {
             <div className="relative bg-gray-900 border border-gray-800 rounded-lg p-4">
               <button
                 type="button"
-                onClick={() => setCapturedImage(null)}
+                onClick={() => { cleanupSpeculativeUpload(); setCapturedImage(null); }}
                 className="absolute top-2 right-2 p-2 bg-red-600 hover:bg-red-700 text-white rounded-full transition-colors z-10"
               >
                 <X size={20} />
