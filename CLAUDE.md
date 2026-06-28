@@ -223,6 +223,7 @@ Changes applied to QA that have **not** yet been deployed to production. Update 
 | Function | Changes |
 |----------|---------|
 | `scan-comic` | gpt-4o-mini first pass + gpt-4o fallback gate; temperature 0; quality 0.85; barcode data support (`barcodeData` in prompt) |
+| `update-subscription` | New function — handles RevenueCat webhooks and client calls to sync `user_tier` and `subscription_expires_at` |
 
 ---
 
