@@ -216,6 +216,7 @@ Changes applied to QA that have **not** yet been deployed to production. Update 
 |------|-------------|
 | `20260627012157_add_gpt4o_fallback_tracking.sql` | Adds `gpt4o_fallback_scan_count` column to `user_profiles` and `increment_gpt4o_fallback_count` SECURITY DEFINER function |
 | `20260627012407_add_gpt4o_fallback_tracking.sql` | No-op duplicate file — safe to apply |
+| `20260628173011_add_plus_tier_and_subscription_tracking.sql` | Adds `plus` to `user_tier` constraint; adds `subscription_expires_at` column; updates `get_user_scan_info` to return 500 limit for `paid` tier |
 
 ### Edge Functions
 
