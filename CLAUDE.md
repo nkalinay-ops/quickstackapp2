@@ -202,6 +202,26 @@ npm run build:android    # Build + sync to Capacitor Android
 - Prefer the smallest possible change that solves the problem.
 - Do not modify unrelated files.
 - Do not update package versions unless explicitly requested.
+- **Whenever a migration is created or an edge function is created/modified, immediately add it to the Pending Production Deployments section below. Remove it only when confirmed deployed to production.**
+
+---
+
+## Pending Production Deployments
+
+Changes applied to QA that have **not** yet been deployed to production. Update this list whenever Supabase changes are made. Clear each item when production deployment is confirmed.
+
+### Migrations
+
+| File | Description |
+|------|-------------|
+| `20260627012157_add_gpt4o_fallback_tracking.sql` | Adds `gpt4o_fallback_scan_count` column to `user_profiles` and `increment_gpt4o_fallback_count` SECURITY DEFINER function |
+| `20260627012407_add_gpt4o_fallback_tracking.sql` | No-op duplicate file — safe to apply |
+
+### Edge Functions
+
+| Function | Changes |
+|----------|---------|
+| `scan-comic` | gpt-4o-mini first pass + gpt-4o fallback gate; temperature 0; quality 0.85; barcode data support (`barcodeData` in prompt) |
 
 ---
 
