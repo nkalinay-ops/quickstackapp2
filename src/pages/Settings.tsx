@@ -2,14 +2,16 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import type { OcrCorrectionRule } from '../lib/supabase';
-import { LogOut, User, Mail, Lock, Eye, EyeOff, Trash2, AlertTriangle, ExternalLink, Wand2, ChevronDown, ChevronUp } from 'lucide-react';
+import { LogOut, User, Mail, Lock, Eye, EyeOff, Trash2, AlertTriangle, ExternalLink, Wand2, ChevronDown, ChevronUp, CreditCard, Zap } from 'lucide-react';
 import { PasswordStrength, validatePassword } from '../components/PasswordStrength';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { AlertModal } from '../components/AlertModal';
-import { openLegalLink } from '../lib/capacitorSetup';
+import { openLegalLink, isNativePlatform } from '../lib/capacitorSetup';
+import { Purchases } from '@revenuecat/purchases-capacitor';
+import type { PurchasesPackage } from '@revenuecat/purchases-capacitor';
 
 export function Settings() {
-  const { user, signOut, updatePassword, deleteAccount } = useAuth();
+  const { user, userTier, signOut, updatePassword, deleteAccount, refreshAdminStatus } = useAuth();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -30,6 +32,51 @@ export function Settings() {
     message: string;
     type?: 'error' | 'success' | 'info';
   }>({ isOpen: false, message: '' });
+
+  // Subscription state
+  const [scanInfo, setScanInfo] = useState<{ monthly_scan_count: number; scan_limit: number | null } | null>(null);
+  const [purchaseLoading, setPurchaseLoading] = useState(false);
+  const [restoreLoading, setRestoreLoading] = useState(false);
+
+  useEffect(() => {
+    if (!user || (userTier !== 'free' && userTier !== 'paid')) return;
+    supabase.rpc('get_user_scan_info', { p_user_id: user.id }).then(({ data }) => {
+      if (data) setScanInfo({ monthly_scan_count: data.monthly_scan_count ?? 0, scan_limit: data.scan_limit ?? null });
+    });
+  }, [user, userTier]);
+
+  const handlePurchase = async (packageIdentifier: string) => {
+    setPurchaseLoading(true);
+    try {
+      const offerings = await Purchases.getOfferings();
+      const pkg = offerings.current?.availablePackages.find((p: PurchasesPackage) => p.identifier === packageIdentifier);
+      if (!pkg) throw new Error('Package not found');
+      const { customerInfo } = await Purchases.purchasePackage({ aPackage: pkg });
+      await supabase.functions.invoke('update-subscription', { body: { customerInfo } });
+      await refreshAdminStatus();
+    } catch (e: unknown) {
+      const err = e as { userCancelled?: boolean };
+      if (!err.userCancelled) {
+        setAlertModal({ isOpen: true, title: 'Purchase Failed', message: 'Unable to complete purchase. Please try again.', type: 'error' });
+      }
+    } finally {
+      setPurchaseLoading(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    setRestoreLoading(true);
+    try {
+      const { customerInfo } = await Purchases.restorePurchases();
+      await supabase.functions.invoke('update-subscription', { body: { customerInfo } });
+      await refreshAdminStatus();
+      setAlertModal({ isOpen: true, title: 'Purchases Restored', message: 'Your subscription has been restored successfully.', type: 'success' });
+    } catch {
+      setAlertModal({ isOpen: true, title: 'Restore Failed', message: 'Unable to restore purchases. Please try again.', type: 'error' });
+    } finally {
+      setRestoreLoading(false);
+    }
+  };
 
   // Scan rules state
   const [scanRulesOpen, setScanRulesOpen] = useState(false);
@@ -192,6 +239,99 @@ export function Settings() {
             </div>
           </div>
         </div>
+
+        {userTier !== 'admin' && (
+          <div className="bg-gray-900 rounded-lg p-4 border border-gray-800">
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <CreditCard size={20} />
+              Subscription
+            </h2>
+
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-gray-400 text-sm">Current plan</span>
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                userTier === 'plus' ? 'bg-purple-900 text-purple-300' :
+                userTier === 'paid' ? 'bg-blue-900 text-blue-300' :
+                'bg-gray-800 text-gray-300'
+              }`}>
+                {userTier === 'plus' ? 'Plus' : userTier === 'paid' ? 'Paid' : 'Free'}
+              </span>
+            </div>
+
+            {userTier === 'plus' && (
+              <p className="text-sm text-gray-400 mb-4">Unlimited scans per month</p>
+            )}
+
+            {scanInfo && scanInfo.scan_limit !== null && (
+              <div className="mb-4">
+                <div className="flex justify-between text-sm mb-1.5">
+                  <span className="text-gray-400">Scans this month</span>
+                  <span className="text-gray-300">{scanInfo.monthly_scan_count} / {scanInfo.scan_limit}</span>
+                </div>
+                <div className="w-full bg-gray-800 rounded-full h-1.5">
+                  <div
+                    className={`h-1.5 rounded-full transition-all ${
+                      scanInfo.monthly_scan_count >= scanInfo.scan_limit ? 'bg-red-500' :
+                      scanInfo.monthly_scan_count >= scanInfo.scan_limit * 0.8 ? 'bg-amber-500' :
+                      'bg-blue-500'
+                    }`}
+                    style={{ width: `${Math.min(100, (scanInfo.monthly_scan_count / scanInfo.scan_limit) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {isNativePlatform() && (
+              <div className="space-y-2 mt-2">
+                {userTier === 'free' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handlePurchase('paid_monthly')}
+                      disabled={purchaseLoading}
+                      className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <Zap size={15} />
+                      {purchaseLoading ? 'Processing...' : 'Upgrade to Paid · 500 scans/month'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handlePurchase('plus_monthly')}
+                      disabled={purchaseLoading}
+                      className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <Zap size={15} />
+                      {purchaseLoading ? 'Processing...' : 'Upgrade to Plus · Unlimited scans'}
+                    </button>
+                  </>
+                )}
+                {userTier === 'paid' && (
+                  <button
+                    type="button"
+                    onClick={() => handlePurchase('plus_monthly')}
+                    disabled={purchaseLoading}
+                    className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    <Zap size={15} />
+                    {purchaseLoading ? 'Processing...' : 'Upgrade to Plus · Unlimited scans'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleRestore}
+                  disabled={restoreLoading}
+                  className="w-full py-2 text-gray-500 hover:text-gray-300 text-sm transition-colors disabled:opacity-50"
+                >
+                  {restoreLoading ? 'Restoring...' : 'Restore purchases'}
+                </button>
+              </div>
+            )}
+
+            {(userTier === 'paid' || userTier === 'plus') && !isNativePlatform() && (
+              <p className="text-xs text-gray-500 mt-2">Manage your subscription through the Google Play Store.</p>
+            )}
+          </div>
+        )}
 
         <div className="bg-gray-900 rounded-lg p-4 border border-gray-800">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
