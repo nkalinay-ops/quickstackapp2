@@ -8,6 +8,7 @@ import DuplicateModal from '../components/DuplicateModal';
 import { AlertModal } from '../components/AlertModal';
 
 const FREE_SCAN_LIMIT = 20;
+const PAID_SCAN_LIMIT = 500;
 
 const todayEST = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 
@@ -81,7 +82,7 @@ export function AddComic() {
   }, []);
 
   useEffect(() => {
-    if (!user || userTier !== 'free') return;
+    if (!user || (userTier !== 'free' && userTier !== 'paid')) return;
     supabase
       .rpc('get_user_scan_info', { p_user_id: user.id })
       .then(({ data }) => {
@@ -212,14 +213,18 @@ export function AddComic() {
 
       if (!response.ok) {
         if (response.status === 429 && result.limitReached) {
-          setMonthlyScanCount(FREE_SCAN_LIMIT);
+          const hitLimit = result.scan_limit ?? FREE_SCAN_LIMIT;
+          setMonthlyScanCount(hitLimit);
           const resetMsg = scanRenewalInterval === 'day'
             ? 'Your limit resets tomorrow at midnight.'
             : 'Your limit resets on the 1st of next month.';
+          const upgradeMsg = result.tier === 'paid'
+            ? 'Upgrade to Plus for unlimited scanning.'
+            : 'Upgrade to a paid plan for more scans.';
           setAlertModal({
             isOpen: true,
             title: 'Scan Limit Reached',
-            message: `You have used all ${FREE_SCAN_LIMIT} scans for this period. ${resetMsg} Please enter comic details manually, or upgrade to a paid plan for unlimited scans.`,
+            message: `You have used all ${hitLimit} scans for this period. ${resetMsg} Please enter comic details manually, or ${upgradeMsg}`,
             type: 'info',
           });
         } else {
@@ -238,7 +243,7 @@ export function AddComic() {
       }
 
       if (result.success && result.data) {
-        if (result.scan_info && userTier === 'free') {
+        if (result.scan_info && (userTier === 'free' || userTier === 'paid')) {
           setMonthlyScanCount(result.scan_info.monthly_scan_count ?? null);
         }
         const rawSeries = result.data.series || '';
@@ -770,7 +775,8 @@ export function AddComic() {
     );
   }
 
-  const scanLimitReached = userTier === 'free' && monthlyScanCount !== null && monthlyScanCount >= FREE_SCAN_LIMIT;
+  const scanLimit = userTier === 'free' ? FREE_SCAN_LIMIT : userTier === 'paid' ? PAID_SCAN_LIMIT : null;
+  const scanLimitReached = scanLimit !== null && monthlyScanCount !== null && monthlyScanCount >= scanLimit;
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
@@ -835,23 +841,23 @@ export function AddComic() {
             </div>
           ) : (
             <>
-              {userTier === 'free' && monthlyScanCount !== null && (
+              {scanLimit !== null && monthlyScanCount !== null && (
                 <div className={`mb-3 flex items-center justify-between px-4 py-2 rounded-lg border text-sm ${
                   scanLimitReached
                     ? 'bg-red-950 border-red-800 text-red-400'
-                    : monthlyScanCount >= FREE_SCAN_LIMIT - 3
+                    : monthlyScanCount >= scanLimit - 3
                     ? 'bg-amber-950 border-amber-800 text-amber-400'
                     : 'bg-gray-900 border-gray-800 text-gray-400'
                 }`}>
                   <span>
                     {scanLimitReached
                       ? `${scanRenewalInterval === 'day' ? 'Daily' : 'Monthly'} scan limit reached`
-                      : `${monthlyScanCount} of ${FREE_SCAN_LIMIT} scans used this ${scanRenewalInterval === 'day' ? 'day' : 'month'}`}
+                      : `${monthlyScanCount} of ${scanLimit} scans used this ${scanRenewalInterval === 'day' ? 'day' : 'month'}`}
                   </span>
                   {scanLimitReached && (
                     <span className="flex items-center gap-1 text-xs font-medium text-amber-400">
                       <Zap size={12} />
-                      Upgrade for unlimited
+                      {userTier === 'paid' ? 'Upgrade to Plus' : 'Upgrade for more scans'}
                     </span>
                   )}
                 </div>
@@ -888,23 +894,23 @@ export function AddComic() {
         <div className="mb-6">
           {!capturedImage ? (
             <>
-              {userTier === 'free' && monthlyScanCount !== null && (
+              {scanLimit !== null && monthlyScanCount !== null && (
                 <div className={`mb-3 flex items-center justify-between px-4 py-2 rounded-lg border text-sm ${
                   scanLimitReached
                     ? 'bg-red-950 border-red-800 text-red-400'
-                    : monthlyScanCount >= FREE_SCAN_LIMIT - 3
+                    : monthlyScanCount >= scanLimit - 3
                     ? 'bg-amber-950 border-amber-800 text-amber-400'
                     : 'bg-gray-900 border-gray-800 text-gray-400'
                 }`}>
                   <span>
                     {scanLimitReached
                       ? `${scanRenewalInterval === 'day' ? 'Daily' : 'Monthly'} scan limit reached`
-                      : `${monthlyScanCount} of ${FREE_SCAN_LIMIT} scans used this ${scanRenewalInterval === 'day' ? 'day' : 'month'}`}
+                      : `${monthlyScanCount} of ${scanLimit} scans used this ${scanRenewalInterval === 'day' ? 'day' : 'month'}`}
                   </span>
                   {scanLimitReached && (
                     <span className="flex items-center gap-1 text-xs font-medium text-amber-400">
                       <Zap size={12} />
-                      Upgrade for unlimited
+                      {userTier === 'paid' ? 'Upgrade to Plus' : 'Upgrade for more scans'}
                     </span>
                   )}
                 </div>

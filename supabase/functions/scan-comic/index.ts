@@ -20,6 +20,7 @@ interface ComicData {
 }
 
 const FREE_TIER_SCAN_LIMIT = 20;
+const PAID_TIER_SCAN_LIMIT = 500;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -109,6 +110,19 @@ Deno.serve(async (req: Request) => {
           tier,
           monthly_scan_count: monthlyCount,
           scan_limit: FREE_TIER_SCAN_LIMIT,
+        }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (tier === "paid" && monthlyCount >= PAID_TIER_SCAN_LIMIT) {
+      return new Response(
+        JSON.stringify({
+          error: "Monthly scan limit reached. Upgrade to Plus for unlimited scanning.",
+          limitReached: true,
+          tier,
+          monthly_scan_count: monthlyCount,
+          scan_limit: PAID_TIER_SCAN_LIMIT,
         }),
         { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
