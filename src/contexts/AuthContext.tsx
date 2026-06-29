@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import { isNativePlatform } from '../lib/capacitorSetup';
+import { isNativePlatform, loginRevenueCat, logoutRevenueCat } from '../lib/capacitorSetup';
 
-export type UserTier = 'free' | 'paid' | 'admin';
+export type UserTier = 'free' | 'paid' | 'plus' | 'admin';
 
 type AuthContextType = {
   user: User | null;
@@ -122,12 +122,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               await fetchAdminStatus(session.user.id);
               setUser(session.user);
               setSession(session);
+              loginRevenueCat(session.user.id);
             }
           } else {
             setUser(null);
             setSession(null);
             setIsAdmin(false);
             setUserTier('free');
+            logoutRevenueCat();
           }
           setLoading(false);
         }

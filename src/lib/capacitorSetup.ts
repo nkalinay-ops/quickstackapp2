@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
+import { Purchases } from '@revenuecat/purchases-capacitor';
 
 type LegalPage = 'privacy' | 'terms';
 
@@ -90,8 +91,29 @@ export function handleDeepLink(url: string): string | null {
   }
 }
 
+export async function loginRevenueCat(userId: string): Promise<void> {
+  if (!isNativePlatform()) return;
+  try {
+    await Purchases.logIn({ appUserID: userId });
+  } catch {
+    // Non-fatal — app functions normally without RC identity
+  }
+}
+
+export async function logoutRevenueCat(): Promise<void> {
+  if (!isNativePlatform()) return;
+  try {
+    await Purchases.logOut();
+  } catch {}
+}
+
 export function initCapacitor(): void {
   if (!isNativePlatform()) return;
+
+  const rcApiKey = import.meta.env.VITE_REVENUECAT_API_KEY as string | undefined;
+  if (rcApiKey) {
+    Purchases.configure({ apiKey: rcApiKey }).catch(() => {});
+  }
 
   if (typeof window !== 'undefined') {
     // Handle deep link if app was opened fresh from one
