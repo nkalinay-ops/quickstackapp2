@@ -287,7 +287,7 @@ export function Settings() {
                   <>
                     <button
                       type="button"
-                      onClick={() => handlePurchase('paid_monthly')}
+                      onClick={() => handlePurchase('collector_monthly')}
                       disabled={purchaseLoading}
                       className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                     >
@@ -296,7 +296,7 @@ export function Settings() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => handlePurchase('plus_monthly')}
+                      onClick={() => handlePurchase('pro_monthly')}
                       disabled={purchaseLoading}
                       className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                     >
@@ -308,7 +308,7 @@ export function Settings() {
                 {userTier === 'paid' && (
                   <button
                     type="button"
-                    onClick={() => handlePurchase('plus_monthly')}
+                    onClick={() => handlePurchase('pro_monthly')}
                     disabled={purchaseLoading}
                     className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                   >
