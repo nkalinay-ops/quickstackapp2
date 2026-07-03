@@ -35,14 +35,27 @@ export function Settings() {
 
   // Subscription state
   const [scanInfo, setScanInfo] = useState<{ monthly_scan_count: number; scan_limit: number | null } | null>(null);
+  const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | null>(null);
   const [purchaseLoading, setPurchaseLoading] = useState(false);
   const [restoreLoading, setRestoreLoading] = useState(false);
 
   useEffect(() => {
-    if (!user || (userTier !== 'free' && userTier !== 'paid')) return;
-    supabase.rpc('get_user_scan_info', { p_user_id: user.id }).then(({ data }) => {
-      if (data) setScanInfo({ monthly_scan_count: data.monthly_scan_count ?? 0, scan_limit: data.scan_limit ?? null });
-    });
+    if (!user) return;
+    if (userTier === 'free' || userTier === 'paid') {
+      supabase.rpc('get_user_scan_info', { p_user_id: user.id }).then(({ data }) => {
+        if (data) setScanInfo({ monthly_scan_count: data.monthly_scan_count ?? 0, scan_limit: data.scan_limit ?? null });
+      });
+    }
+    if (userTier === 'paid' || userTier === 'plus') {
+      supabase
+        .from('user_profiles')
+        .select('subscription_expires_at')
+        .eq('id', user.id)
+        .single()
+        .then(({ data }) => {
+          setSubscriptionExpiresAt(data?.subscription_expires_at ?? null);
+        });
+    }
   }, [user, userTier]);
 
   const handlePurchase = async (packageIdentifier: string) => {
@@ -68,9 +81,13 @@ export function Settings() {
     setRestoreLoading(true);
     try {
       const { customerInfo } = await Purchases.restorePurchases();
-      await supabase.functions.invoke('update-subscription', { body: { customerInfo } });
+      const { data } = await supabase.functions.invoke('update-subscription', { body: { customerInfo } });
       await refreshAdminStatus();
-      setAlertModal({ isOpen: true, title: 'Purchases Restored', message: 'Your subscription has been restored successfully.', type: 'success' });
+      if (data?.tier && data.tier !== 'free') {
+        setAlertModal({ isOpen: true, title: 'Purchases Restored', message: 'Your subscription has been restored successfully.', type: 'success' });
+      } else {
+        setAlertModal({ isOpen: true, title: 'No Active Subscription', message: 'No active subscription was found for this account.', type: 'info' });
+      }
     } catch {
       setAlertModal({ isOpen: true, title: 'Restore Failed', message: 'Unable to restore purchases. Please try again.', type: 'error' });
     } finally {
@@ -258,6 +275,12 @@ export function Settings() {
               </span>
             </div>
 
+            {subscriptionExpiresAt && (userTier === 'paid' || userTier === 'plus') && (
+              <p className="text-xs text-gray-500 text-right -mt-2 mb-4">
+                Access through {new Date(subscriptionExpiresAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+              </p>
+            )}
+
             {userTier === 'plus' && (
               <p className="text-sm text-gray-400 mb-4">Unlimited scans per month</p>
             )}
@@ -314,6 +337,18 @@ export function Settings() {
                   >
                     <Zap size={15} />
                     {purchaseLoading ? 'Processing...' : 'Upgrade to Plus · Unlimited scans'}
+                  </button>
+                )}
+                {(userTier === 'paid' || userTier === 'plus') && (
+                  <button
+                    type="button"
+                    onClick={() => window.open(
+                      `https://play.google.com/store/account/subscriptions?sku=${userTier === 'paid' ? 'collector_monthly' : 'pro_monthly'}&package=com.quickstackapp.quickstack`,
+                      '_system'
+                    )}
+                    className="w-full py-2 text-gray-500 hover:text-gray-300 text-sm transition-colors"
+                  >
+                    Manage subscription
                   </button>
                 )}
                 <button

@@ -31,15 +31,15 @@ interface RevenueCatCustomerInfo {
 }
 
 function resolveTierFromEntitlements(entitlementIds: string[]): string {
-  if (entitlementIds.includes("plus")) return "plus";
-  if (entitlementIds.includes("paid")) return "paid";
+  if (entitlementIds.includes("pro")) return "plus";
+  if (entitlementIds.includes("collector")) return "paid";
   return "free";
 }
 
 function resolveTierFromCustomerInfo(customerInfo: RevenueCatCustomerInfo): { tier: string; expiresAt: string | null } {
   const active = customerInfo?.entitlements?.active ?? {};
-  if (active["plus"]) return { tier: "plus", expiresAt: active["plus"].expirationDate };
-  if (active["paid"]) return { tier: "paid", expiresAt: active["paid"].expirationDate };
+  if (active["pro"]) return { tier: "plus", expiresAt: active["pro"].expirationDate };
+  if (active["collector"]) return { tier: "paid", expiresAt: active["collector"].expirationDate };
   return { tier: "free", expiresAt: null };
 }
 
