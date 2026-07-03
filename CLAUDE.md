@@ -212,18 +212,11 @@ Changes applied to QA that have **not** yet been deployed to production. Update 
 
 ### Migrations
 
-| File | Description |
-|------|-------------|
-| `20260627012157_add_gpt4o_fallback_tracking.sql` | Adds `gpt4o_fallback_scan_count` column to `user_profiles` and `increment_gpt4o_fallback_count` SECURITY DEFINER function |
-| `20260627012407_add_gpt4o_fallback_tracking.sql` | No-op duplicate file — safe to apply |
-| `20260628173011_add_plus_tier_and_subscription_tracking.sql` | Adds `plus` to `user_tier` constraint; adds `subscription_expires_at` column; updates `get_user_scan_info` to return 500 limit for `paid` tier |
+_None — production is up to date._
 
 ### Edge Functions
 
-| Function | Changes |
-|----------|---------|
-| `scan-comic` | gpt-4o-mini first pass + gpt-4o fallback gate; temperature 0; quality 0.85; barcode data support; 500-scan cap for `paid` tier |
-| `update-subscription` | New function — handles RevenueCat webhooks and client calls to sync `user_tier` and `subscription_expires_at` |
+_None — production is up to date._
 
 ---
 
