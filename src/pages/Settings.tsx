@@ -343,7 +343,7 @@ export function Settings() {
                   <button
                     type="button"
                     onClick={() => window.open(
-                      `https://play.google.com/store/account/subscriptions?sku=${userTier === 'paid' ? 'collector_monthly' : 'pro_monthly'}&package=com.quickstackapp.quickstack`,
+                      `https://play.google.com/store/account/subscriptions?sku=${userTier === 'paid' ? 'quickstack_collector_monthly' : 'quickstack_pro_monthly'}&package=com.quickstackapp.quickstack`,
                       '_system'
                     )}
                     className="w-full py-2 text-gray-500 hover:text-gray-300 text-sm transition-colors"
