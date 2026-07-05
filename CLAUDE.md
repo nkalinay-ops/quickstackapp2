@@ -212,7 +212,7 @@ Changes applied to QA that have **not** yet been deployed to production. Update 
 
 ### Migrations
 
-_None — production is up to date._
+- `20260705141506_add_display_name_and_onboarding_to_user_profiles.sql` — adds `display_name` and `onboarding_completed_at` to `user_profiles` (new user onboarding flow)
 
 ### Edge Functions
 
