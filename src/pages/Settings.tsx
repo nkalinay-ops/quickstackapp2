@@ -7,6 +7,7 @@ import { PasswordStrength, validatePassword } from '../components/PasswordStreng
 import { ConfirmModal } from '../components/ConfirmModal';
 import { AlertModal } from '../components/AlertModal';
 import { openLegalLink, isNativePlatform } from '../lib/capacitorSetup';
+import { App as CapacitorApp } from '@capacitor/app';
 import { Purchases } from '@revenuecat/purchases-capacitor';
 import type { PurchasesPackage } from '@revenuecat/purchases-capacitor';
 
@@ -32,6 +33,12 @@ export function Settings() {
     message: string;
     type?: 'error' | 'success' | 'info';
   }>({ isOpen: false, message: '' });
+
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    CapacitorApp.getInfo().then(({ version }) => setAppVersion(version)).catch(() => {});
+  }, []);
 
   // Subscription state
   const [scanInfo, setScanInfo] = useState<{ monthly_scan_count: number; scan_limit: number | null } | null>(null);
@@ -618,7 +625,7 @@ export function Settings() {
             QuickStack is a mobile-first comic book collection tracker designed for speed and simplicity.
             Add comics to your collection in under 5 seconds.
           </p>
-          <div className="text-xs text-gray-500 mb-4">Version 1.0.7</div>
+          {appVersion && <div className="text-xs text-gray-500 mb-4">Version {appVersion}</div>}
           <div className="border-t border-gray-800 pt-3 space-y-1">
             <button
               type="button"

@@ -21,7 +21,7 @@ interface UserTermination {
   reason: string | null;
 }
 
-type UserTier = 'free' | 'paid' | 'admin';
+type UserTier = 'free' | 'paid' | 'plus' | 'admin';
 
 interface UserProfile {
   id: string;
@@ -377,7 +377,7 @@ export function AdminPanel() {
     adminUsers: users.filter(u => u.is_admin).length,
     activeBetaKeys: betaKeys.filter(k => k.is_active && !k.redeemed_at).length,
     terminatedUsers: users.filter(u => u.termination).length,
-    paidUsers: users.filter(u => u.user_tier === 'paid').length,
+    paidUsers: users.filter(u => u.user_tier === 'paid' || u.user_tier === 'plus').length,
   };
 
   if (loading) {
@@ -514,7 +514,7 @@ export function AdminPanel() {
           <div className="flex items-center gap-3">
             <Upload className="w-8 h-8 text-blue-400" />
             <div>
-              <p className="text-gray-400 text-sm">Paid Users</p>
+              <p className="text-gray-400 text-sm">Subscribers</p>
               <p className="text-2xl font-bold text-white">{stats.paidUsers}</p>
             </div>
           </div>
@@ -581,6 +581,11 @@ export function AdminPanel() {
                           {user.is_admin && (
                             <span className="px-3 py-1 bg-orange-500/10 text-orange-400 rounded-full text-sm border border-orange-500/20">
                               Admin
+                            </span>
+                          )}
+                          {!user.is_admin && user.user_tier === 'plus' && (
+                            <span className="px-3 py-1 bg-indigo-500/10 text-indigo-400 rounded-full text-sm border border-indigo-500/20">
+                              Plus
                             </span>
                           )}
                           {!user.is_admin && user.user_tier === 'paid' && (
@@ -658,35 +663,40 @@ export function AdminPanel() {
                       {!user.termination && (
                         <div className="space-y-3">
                           {!user.is_admin && (
-                            <div className="flex items-center gap-3">
-                              <span className="text-gray-400 text-sm">Plan:</span>
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => handleSetTier(user.id, 'free')}
-                                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                                    user.user_tier === 'free'
-                                      ? 'bg-gray-600 text-white'
-                                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700'
-                                  }`}
-                                >
-                                  Free
-                                </button>
-                                <button
-                                  onClick={() => handleSetTier(user.id, 'paid')}
-                                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                                    user.user_tier === 'paid'
-                                      ? 'bg-blue-600 text-white'
-                                      : 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700'
-                                  }`}
-                                >
-                                  Paid
-                                </button>
+                            <div className="flex flex-col gap-1.5">
+                              <div className="flex items-center gap-3">
+                                <span className="text-gray-400 text-sm">Plan:</span>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => handleSetTier(user.id, 'free')}
+                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                                      user.user_tier === 'free'
+                                        ? 'bg-gray-600 text-white'
+                                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700'
+                                    }`}
+                                  >
+                                    Free
+                                  </button>
+                                  <button
+                                    onClick={() => handleSetTier(user.id, 'paid')}
+                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                                      user.user_tier === 'paid'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700 border border-gray-700'
+                                    }`}
+                                  >
+                                    Paid
+                                  </button>
+                                </div>
+                                <span className="text-gray-600 text-xs">
+                                  {user.user_tier === 'free'
+                                    ? `${user.monthly_scan_count ?? 0}/20 scans this month`
+                                    : 'Unlimited scans + bulk upload'}
+                                </span>
                               </div>
-                              <span className="text-gray-600 text-xs">
-                                {user.user_tier === 'free'
-                                  ? `${user.monthly_scan_count ?? 0}/20 scans this month`
-                                  : 'Unlimited scans + bulk upload'}
-                              </span>
+                              <p className="text-xs text-amber-600/70">
+                                Manual changes will be overwritten by the next RevenueCat webhook event.
+                              </p>
                             </div>
                           )}
                           <div className="flex gap-3">
