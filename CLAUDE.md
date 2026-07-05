@@ -216,7 +216,7 @@ Changes applied to QA that have **not** yet been deployed to production. Update 
 
 ### Edge Functions
 
-_None — production is up to date._
+- `update-subscription` — now sets `can_bulk_upload` based on tier (true for paid/plus, false for free)
 
 ---
 
