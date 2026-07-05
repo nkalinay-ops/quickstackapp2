@@ -5,6 +5,7 @@ import { PasswordStrength, validatePassword } from './PasswordStrength';
 import { openLegalLink } from '../lib/capacitorSetup';
 
 export function Auth() {
+  const websiteMode = new URLSearchParams(window.location.search).get('source') === 'website';
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -195,13 +196,28 @@ export function Auth() {
                 Forgot your password?
               </button>
             )}
-            <button
-              type="button"
-              onClick={handleSwitchMode}
-              className="w-full text-gray-400 hover:text-white transition-colors text-sm"
-            >
-              {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
-            </button>
+            {!websiteMode && (
+              <button
+                type="button"
+                onClick={handleSwitchMode}
+                className="w-full text-gray-400 hover:text-white transition-colors text-sm"
+              >
+                {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+              </button>
+            )}
+            {websiteMode && !isSignUp && (
+              <p className="text-center text-sm text-gray-500">
+                New to QuickStack?{' '}
+                <a
+                  href="https://play.google.com/store/apps/details?id=com.quickstackapp.quickstack"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:text-blue-300"
+                >
+                  Download on Android
+                </a>
+              </p>
+            )}
           </div>
 
           {isSignUp && (
