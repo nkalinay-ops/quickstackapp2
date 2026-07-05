@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { initCapacitor } from './lib/capacitorSetup';
+import { supabase } from './lib/supabase';
 import { Auth } from './components/Auth';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
@@ -14,6 +15,7 @@ import { BulkUpload } from './pages/BulkUpload';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
 import { EmailConfirmed } from './pages/EmailConfirmed';
+import { Onboarding } from './components/Onboarding';
 
 type LayoutPage = 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload';
 type Page = 'auth' | 'forgot-password' | 'reset-password' | 'email-confirmed' | LayoutPage;
@@ -37,6 +39,7 @@ function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>(getInitialPage());
   const [preSelectComicId, setPreSelectComicId] = useState<string | null>(null);
   const [collectionInitialMode, setCollectionInitialMode] = useState<'all' | 'week' | null>(null);
+  const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
 
   const navigateToComic = (comicId: string) => {
     setPreSelectComicId(comicId);
@@ -56,12 +59,25 @@ function AppContent() {
     if (currentPage === 'reset-password' || currentPage === 'forgot-password' || currentPage === 'email-confirmed' || isResetUrl) return;
 
     if (!user) {
+      setOnboardingComplete(null);
       window.history.replaceState({}, '', window.location.pathname);
       setCurrentPage('auth');
     } else if (currentPage === 'auth') {
       setCurrentPage('dashboard');
     }
   }, [user, currentPage]);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from('user_profiles')
+      .select('onboarding_completed_at')
+      .eq('id', user.id)
+      .single()
+      .then(({ data }) => {
+        setOnboardingComplete(!!data?.onboarding_completed_at);
+      });
+  }, [user]);
 
   useEffect(() => {
     const handleNavigate = (event: Event) => {
@@ -95,6 +111,23 @@ function AppContent() {
 
   if (!user) {
     return <Auth />;
+  }
+
+  if (onboardingComplete === null) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+        <div className="text-gray-400">Loading...</div>
+      </div>
+    );
+  }
+
+  if (onboardingComplete === false) {
+    return (
+      <Onboarding
+        userId={user.id}
+        onComplete={() => setOnboardingComplete(true)}
+      />
+    );
   }
 
   return (
