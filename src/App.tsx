@@ -40,6 +40,8 @@ function AppContent() {
   const [preSelectComicId, setPreSelectComicId] = useState<string | null>(null);
   const [collectionInitialMode, setCollectionInitialMode] = useState<'all' | 'week' | null>(null);
   const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
+  // Captured before replaceState strips query params from the URL
+  const [websiteMode] = useState(() => new URLSearchParams(window.location.search).get('source') === 'website');
 
   const navigateToComic = (comicId: string) => {
     setPreSelectComicId(comicId);
@@ -110,7 +112,7 @@ function AppContent() {
   }
 
   if (!user) {
-    return <Auth />;
+    return <Auth websiteMode={websiteMode} />;
   }
 
   if (onboardingComplete === null) {

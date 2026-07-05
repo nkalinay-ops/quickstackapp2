@@ -4,8 +4,7 @@ import { Eye, EyeOff, Mail } from 'lucide-react';
 import { PasswordStrength, validatePassword } from './PasswordStrength';
 import { openLegalLink } from '../lib/capacitorSetup';
 
-export function Auth() {
-  const websiteMode = new URLSearchParams(window.location.search).get('source') === 'website';
+export function Auth({ websiteMode = false }: { websiteMode?: boolean }) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
