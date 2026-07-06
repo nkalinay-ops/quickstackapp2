@@ -82,7 +82,11 @@ Deno.serve(async (req: Request) => {
 
       await serviceClient
         .from("user_profiles")
-        .update({ user_tier: tier, subscription_expires_at: expiresAt })
+        .update({
+          user_tier: tier,
+          subscription_expires_at: expiresAt,
+          can_bulk_upload: tier === "paid" || tier === "plus",
+        })
         .eq("id", userId);
     };
 
