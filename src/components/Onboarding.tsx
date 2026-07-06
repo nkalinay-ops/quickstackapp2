@@ -3,7 +3,7 @@ import { Camera, MessageCircle, ChevronRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { isNativePlatform } from '../lib/capacitorSetup';
 
-const DISCORD_INVITE_URL = 'YOUR_DISCORD_INVITE_URL';
+const DISCORD_INVITE_URL = 'https://discord.gg/7Jwzdv5xJS';
 
 interface Props {
   userId: string;
@@ -15,12 +15,13 @@ export function Onboarding({ userId, onComplete }: Props) {
   const [name, setName] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const handleOpenDiscord = () => {
+  const handleOpenDiscord = async () => {
     if (isNativePlatform()) {
       window.open(DISCORD_INVITE_URL, '_system');
     } else {
       window.open(DISCORD_INVITE_URL, '_blank', 'noopener,noreferrer');
     }
+    await handleFinish();
   };
 
   const handleFinish = async () => {

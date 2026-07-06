@@ -14,16 +14,20 @@ export function Dashboard({ onNavigate, onNavigateToComic, onNavigateToCollectio
   const [stats, setStats] = useState({ total: 0, wishlist: 0, recentCount: 0 });
   const [recentComics, setRecentComics] = useState<Comic[]>([]);
   const [loading, setLoading] = useState(true);
+  const [displayName, setDisplayName] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
 
     const loadDashboard = async () => {
       try {
-        const [comicsResult, wishlistResult] = await Promise.all([
+        const [comicsResult, wishlistResult, profileResult] = await Promise.all([
           supabase.from('comics').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
           supabase.from('wishlist').select('*').eq('user_id', user.id),
+          supabase.from('user_profiles').select('display_name').eq('id', user.id).single(),
         ]);
+
+        setDisplayName(profileResult.data?.display_name ?? null);
 
         if (comicsResult.data) {
           setStats({
@@ -64,7 +68,9 @@ export function Dashboard({ onNavigate, onNavigateToComic, onNavigateToCollectio
           alt="QuickStack"
           className="w-64 h-auto mb-1"
         />
-        <p className="text-gray-400">Your comic collection at a glance</p>
+        <p className="text-gray-400">
+          {displayName ? `Welcome back, ${displayName}!` : 'Your comic collection at a glance'}
+        </p>
       </div>
 
       <div className="grid grid-cols-3 gap-3 mb-6">
