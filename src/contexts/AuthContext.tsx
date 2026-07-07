@@ -11,6 +11,9 @@ type AuthContextType = {
   loading: boolean;
   isAdmin: boolean;
   userTier: UserTier;
+  monthlyScanCount: number | null;
+  scanRenewalInterval: 'month' | 'day';
+  setScanCount: (count: number | null) => void;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<{ needsEmailConfirmation: boolean }>;
   signOut: () => Promise<void>;
@@ -28,6 +31,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [userTier, setUserTier] = useState<UserTier>('free');
+  const [monthlyScanCount, setMonthlyScanCount] = useState<number | null>(null);
+  const [scanRenewalInterval, setScanRenewalInterval] = useState<'month' | 'day'>('month');
   // Ref (not state) so the onAuthStateChange closure always reads the current value.
   // Without this guard, email confirmation in another tab fires SIGNED_IN and auto-logs in the user.
   const expectingSignIn = useRef(false);
@@ -51,10 +56,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!error && data) {
       setIsAdmin(data.is_admin || false);
-      setUserTier((data.user_tier as UserTier) || 'free');
+      const tier = (data.user_tier as UserTier) || 'free';
+      setUserTier(tier);
+      if (tier === 'free' || tier === 'paid') {
+        supabase.rpc('get_user_scan_info', { p_user_id: userId }).then(({ data: scanData }) => {
+          if (scanData) {
+            setMonthlyScanCount(scanData.monthly_scan_count ?? 0);
+            setScanRenewalInterval(scanData.renewal_interval === 'day' ? 'day' : 'month');
+          }
+        });
+      } else {
+        setMonthlyScanCount(null);
+      }
     } else {
       setIsAdmin(false);
       setUserTier('free');
+      setMonthlyScanCount(null);
     }
   };
 
@@ -150,7 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw error;
     }
 
-    const { data: { session } } = await supabase.auth.getSession();
+    await supabase.auth.getSession();
 
     if (data.user) {
       // Block unconfirmed users — Supabase may issue a session before confirmation
@@ -237,8 +254,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.history.replaceState({}, '', window.location.pathname);
   };
 
+  const setScanCount = (count: number | null) => setMonthlyScanCount(count);
+
   return (
-    <AuthContext.Provider value={{ user, session, loading, isAdmin, userTier, signIn, signUp, signOut, refreshAdminStatus, resetPassword, updatePassword, deleteAccount }}>
+    <AuthContext.Provider value={{ user, session, loading, isAdmin, userTier, monthlyScanCount, scanRenewalInterval, setScanCount, signIn, signUp, signOut, refreshAdminStatus, resetPassword, updatePassword, deleteAccount }}>
       {children}
     </AuthContext.Provider>
   );
