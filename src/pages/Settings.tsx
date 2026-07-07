@@ -45,6 +45,7 @@ export function Settings() {
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | null>(null);
   const [purchaseLoading, setPurchaseLoading] = useState(false);
   const [restoreLoading, setRestoreLoading] = useState(false);
+  const [packagePrices, setPackagePrices] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!user) return;
@@ -64,6 +65,24 @@ export function Settings() {
         });
     }
   }, [user, userTier]);
+
+  useEffect(() => {
+    if (!isNativePlatform()) return;
+    Purchases.getOfferings().then((offerings) => {
+      const prices: Record<string, string> = {};
+      offerings.current?.availablePackages.forEach((pkg: PurchasesPackage) => {
+        if (pkg.product.priceString) prices[pkg.identifier] = pkg.product.priceString;
+      });
+      setPackagePrices(prices);
+    }).catch(() => {});
+  }, []);
+
+  const formatPrice = (identifier: string): string => {
+    const price = packagePrices[identifier];
+    if (!price) return '';
+    const period = identifier.includes('annual') || identifier.includes('yearly') ? '/yr' : '/mo';
+    return ` · ${price}${period}`;
+  };
 
   const handlePurchase = async (packageIdentifier: string) => {
     setPurchaseLoading(true);
@@ -322,7 +341,7 @@ export function Settings() {
                       className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       <Zap size={15} />
-                      {purchaseLoading ? 'Processing...' : 'Upgrade to Paid · 500 scans/month'}
+                      {purchaseLoading ? 'Processing...' : `Upgrade to Paid · 500 scans/month${formatPrice('collector_monthly')}`}
                     </button>
                     <button
                       type="button"
@@ -331,7 +350,7 @@ export function Settings() {
                       className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       <Zap size={15} />
-                      {purchaseLoading ? 'Processing...' : 'Upgrade to Plus · Unlimited scans'}
+                      {purchaseLoading ? 'Processing...' : `Upgrade to Plus · Unlimited scans${formatPrice('pro_monthly')}`}
                     </button>
                   </>
                 )}
@@ -343,7 +362,7 @@ export function Settings() {
                     className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                   >
                     <Zap size={15} />
-                    {purchaseLoading ? 'Processing...' : 'Upgrade to Plus · Unlimited scans'}
+                    {purchaseLoading ? 'Processing...' : `Upgrade to Plus · Unlimited scans${formatPrice('pro_monthly')}`}
                   </button>
                 )}
                 {(userTier === 'paid' || userTier === 'plus') && (
