@@ -15,7 +15,7 @@ const todayEST = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Ameri
 type Mode = 'collection' | 'wishlist';
 
 export function AddComic() {
-  const { user, session, userTier } = useAuth();
+  const { user, session, userTier, monthlyScanCount, scanRenewalInterval, setScanCount } = useAuth();
   const [mode, setMode] = useState<Mode>('collection');
 
   // Shared fields
@@ -50,8 +50,6 @@ export function AddComic() {
     isOpen: false,
     message: '',
   });
-  const [monthlyScanCount, setMonthlyScanCount] = useState<number | null>(null);
-  const [scanRenewalInterval, setScanRenewalInterval] = useState<'month' | 'day'>('month');
   // OCR correction rule engine
   const [scannedRaw, setScannedRaw] = useState<{ series: string; story: string; publisher: string } | null>(null);
   const [pendingRuleSuggestion, setPendingRuleSuggestion] = useState<OcrCorrectionRule | null>(null);
@@ -81,17 +79,6 @@ export function AddComic() {
     scanButtonRef.current?.focus();
   }, []);
 
-  useEffect(() => {
-    if (!user || (userTier !== 'free' && userTier !== 'paid')) return;
-    supabase
-      .rpc('get_user_scan_info', { p_user_id: user.id })
-      .then(({ data }) => {
-        if (data) {
-          setMonthlyScanCount(data.monthly_scan_count ?? 0);
-          setScanRenewalInterval(data.renewal_interval === 'day' ? 'day' : 'month');
-        }
-      });
-  }, [user, userTier]);
 
   const resetForm = () => {
     setSeries('');
@@ -214,7 +201,7 @@ export function AddComic() {
       if (!response.ok) {
         if (response.status === 429 && result.limitReached) {
           const hitLimit = result.scan_limit ?? FREE_SCAN_LIMIT;
-          setMonthlyScanCount(hitLimit);
+          setScanCount(hitLimit);
           const resetMsg = scanRenewalInterval === 'day'
             ? 'Your limit resets tomorrow at midnight.'
             : 'Your limit resets on the 1st of next month.';
@@ -244,7 +231,7 @@ export function AddComic() {
 
       if (result.success && result.data) {
         if (result.scan_info && (userTier === 'free' || userTier === 'paid')) {
-          setMonthlyScanCount(result.scan_info.monthly_scan_count ?? null);
+          setScanCount(result.scan_info.monthly_scan_count ?? null);
         }
         const rawSeries = result.data.series || '';
         const rawStory = result.data.story || '';
