@@ -12,7 +12,7 @@ import { Purchases } from '@revenuecat/purchases-capacitor';
 import type { PurchasesPackage } from '@revenuecat/purchases-capacitor';
 
 export function Settings() {
-  const { user, userTier, signOut, updatePassword, deleteAccount, refreshAdminStatus } = useAuth();
+  const { user, userTier, signOut, updatePassword, deleteAccount, refreshAdminStatus, monthlyScanCount, scanLimit } = useAuth();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -41,7 +41,6 @@ export function Settings() {
   }, []);
 
   // Subscription state
-  const [scanInfo, setScanInfo] = useState<{ monthly_scan_count: number; scan_limit: number | null } | null>(null);
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | null>(null);
   const [purchaseLoading, setPurchaseLoading] = useState(false);
   const [restoreLoading, setRestoreLoading] = useState(false);
@@ -49,11 +48,6 @@ export function Settings() {
 
   useEffect(() => {
     if (!user) return;
-    if (userTier === 'free' || userTier === 'paid') {
-      supabase.rpc('get_user_scan_info', { p_user_id: user.id }).then(({ data }) => {
-        if (data) setScanInfo({ monthly_scan_count: data.monthly_scan_count ?? 0, scan_limit: data.scan_limit ?? null });
-      });
-    }
     if (userTier === 'paid' || userTier === 'plus') {
       supabase
         .from('user_profiles')
@@ -311,20 +305,20 @@ export function Settings() {
               <p className="text-sm text-gray-400 mb-4">Unlimited scans per month</p>
             )}
 
-            {scanInfo && scanInfo.scan_limit !== null && (
+            {monthlyScanCount !== null && scanLimit !== null && (
               <div className="mb-4">
                 <div className="flex justify-between text-sm mb-1.5">
                   <span className="text-gray-400">Scans this month</span>
-                  <span className="text-gray-300">{scanInfo.monthly_scan_count} / {scanInfo.scan_limit}</span>
+                  <span className="text-gray-300">{monthlyScanCount} / {scanLimit}</span>
                 </div>
                 <div className="w-full bg-gray-800 rounded-full h-1.5">
                   <div
                     className={`h-1.5 rounded-full transition-all ${
-                      scanInfo.monthly_scan_count >= scanInfo.scan_limit ? 'bg-red-500' :
-                      scanInfo.monthly_scan_count >= scanInfo.scan_limit * 0.8 ? 'bg-amber-500' :
+                      monthlyScanCount >= scanLimit ? 'bg-red-500' :
+                      monthlyScanCount >= scanLimit * 0.8 ? 'bg-amber-500' :
                       'bg-blue-500'
                     }`}
-                    style={{ width: `${Math.min(100, (scanInfo.monthly_scan_count / scanInfo.scan_limit) * 100)}%` }}
+                    style={{ width: `${Math.min(100, (monthlyScanCount / scanLimit) * 100)}%` }}
                   />
                 </div>
               </div>
