@@ -214,6 +214,7 @@ Changes applied to QA that have **not** yet been deployed to production. Update 
 
 - `20260705141506_add_display_name_and_onboarding_to_user_profiles.sql` — adds `display_name` and `onboarding_completed_at` to `user_profiles` (new user onboarding flow)
 - `20260708222017_fix_get_user_scan_info_renewal_interval.sql` — restores configurable renewal interval and `renewal_interval` field in `get_user_scan_info` (overwritten by 20260628 migration)
+- `20260708223721_protect_scan_count_from_user_writes.sql` — trigger blocks authenticated users from directly writing to `monthly_scan_count`, `scan_month_reset_at`, `user_tier`, `is_admin` on `user_profiles`
 
 ### Edge Functions
 
