@@ -135,6 +135,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockAuthValue.user = { id: 'user-123', email: 'test@example.com' };
   mockAuthValue.userTier = 'free';
+  mockAuthValue.monthlyScanCount = 0;
+  mockAuthValue.scanLimit = 20;
   mockDuplicateResult = null;
   mockInsertError = null;
 });
@@ -212,36 +214,23 @@ describe('AddComic — mode switching', () => {
 });
 
 describe('AddComic — scan limit (free tier)', () => {
-  it('disables Scan button when monthly limit is reached', async () => {
-    const { supabase } = await import('../lib/supabase');
-    (supabase.rpc as ReturnType<typeof vi.fn>).mockResolvedValue({
-      data: { monthly_scan_count: 20, renewal_interval: 'month' },
-      error: null,
-    });
+  it('disables Scan button when monthly limit is reached', () => {
+    mockAuthValue.monthlyScanCount = 20;
     render(<AddComic />);
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Scan Comic Cover/i })).toBeDisabled();
-    });
+    expect(screen.getByRole('button', { name: /Scan Comic Cover/i })).toBeDisabled();
   });
 
-  it('shows "Monthly scan limit reached" message for free users at limit', async () => {
-    const { supabase } = await import('../lib/supabase');
-    (supabase.rpc as ReturnType<typeof vi.fn>).mockResolvedValue({
-      data: { monthly_scan_count: 20, renewal_interval: 'month' },
-      error: null,
-    });
+  it('shows "Monthly scan limit reached" message for free users at limit', () => {
+    mockAuthValue.monthlyScanCount = 20;
     render(<AddComic />);
-    await waitFor(() => {
-      expect(screen.getByText(/Monthly scan limit reached/i)).toBeInTheDocument();
-    });
+    expect(screen.getByText(/Monthly scan limit reached/i)).toBeInTheDocument();
   });
 
-  it('does not show scan usage for paid users', async () => {
+  it('shows scan usage for paid users', () => {
     mockAuthValue.userTier = 'paid';
+    mockAuthValue.monthlyScanCount = 10;
     render(<AddComic />);
-    await waitFor(() => {
-      expect(screen.queryByText(/scans used/i)).toBeNull();
-    });
+    expect(screen.getByText(/10 of 500 scans used/i)).toBeInTheDocument();
   });
 });
 

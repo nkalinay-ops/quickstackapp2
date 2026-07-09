@@ -12,6 +12,7 @@ type AuthContextType = {
   isAdmin: boolean;
   userTier: UserTier;
   monthlyScanCount: number | null;
+  scanLimit: number | null;
   scanRenewalInterval: 'month' | 'day';
   setScanCount: (count: number | null) => void;
   signIn: (email: string, password: string) => Promise<void>;
@@ -32,6 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [userTier, setUserTier] = useState<UserTier>('free');
   const [monthlyScanCount, setMonthlyScanCount] = useState<number | null>(null);
+  const [scanLimit, setScanLimit] = useState<number | null>(null);
   const [scanRenewalInterval, setScanRenewalInterval] = useState<'month' | 'day'>('month');
   // Ref (not state) so the onAuthStateChange closure always reads the current value.
   // Without this guard, email confirmation in another tab fires SIGNED_IN and auto-logs in the user.
@@ -62,16 +64,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         supabase.rpc('get_user_scan_info', { p_user_id: userId }).then(({ data: scanData }) => {
           if (scanData) {
             setMonthlyScanCount(scanData.monthly_scan_count ?? 0);
+            setScanLimit(scanData.scan_limit ?? null);
             setScanRenewalInterval(scanData.renewal_interval === 'day' ? 'day' : 'month');
           }
         });
       } else {
         setMonthlyScanCount(null);
+        setScanLimit(null);
       }
     } else {
       setIsAdmin(false);
       setUserTier('free');
       setMonthlyScanCount(null);
+      setScanLimit(null);
     }
   };
 
@@ -108,7 +113,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       (async () => {
-        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+        // TOKEN_REFRESHED only renews the JWT — user profile and scan counts haven't changed.
+        // Re-running fetchAdminStatus here races with setScanCount() in AddComic: the DB read
+        // can complete after a fresh scan count has already been set, overwriting it with a
+        // stale value and making the count appear stuck.
+        if (event === 'TOKEN_REFRESHED') {
+          if (!settled) { settled = true; clearTimeout(hardTimeout); }
+          if (session) setSession(session);
+          setLoading(false);
+          return;
+        }
+
+        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
           if (!settled) {
             settled = true;
             clearTimeout(hardTimeout);
@@ -146,6 +162,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setSession(null);
             setIsAdmin(false);
             setUserTier('free');
+            setMonthlyScanCount(null);
+            setScanLimit(null);
             logoutRevenueCat();
           }
           setLoading(false);
@@ -257,7 +275,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const setScanCount = (count: number | null) => setMonthlyScanCount(count);
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, isAdmin, userTier, monthlyScanCount, scanRenewalInterval, setScanCount, signIn, signUp, signOut, refreshAdminStatus, resetPassword, updatePassword, deleteAccount }}>
+    <AuthContext.Provider value={{ user, session, loading, isAdmin, userTier, monthlyScanCount, scanLimit, scanRenewalInterval, setScanCount, signIn, signUp, signOut, refreshAdminStatus, resetPassword, updatePassword, deleteAccount }}>
       {children}
     </AuthContext.Provider>
   );
