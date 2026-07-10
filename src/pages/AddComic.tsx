@@ -230,8 +230,8 @@ export function AddComic() {
       }
 
       if (result.success && result.data) {
-        if (result.scan_info && (userTier === 'free' || userTier === 'paid')) {
-          setScanCount(result.scan_info.monthly_scan_count ?? null);
+        if (userTier === 'free' || userTier === 'paid') {
+          setScanCount((monthlyScanCount ?? 0) + 1);
         }
         const rawSeries = result.data.series || '';
         const rawStory = result.data.story || '';

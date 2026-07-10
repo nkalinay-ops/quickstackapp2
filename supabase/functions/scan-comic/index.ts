@@ -365,8 +365,7 @@ Rules:
       EdgeRuntime.waitUntil(userClient.rpc("increment_gpt4o_fallback_count", { p_user_id: user.id }));
     }
 
-    // Fire-and-forget: increment scan count without blocking the response
-    EdgeRuntime.waitUntil(userClient.rpc("increment_scan_count", { p_user_id: user.id }));
+    await userClient.rpc("increment_scan_count", { p_user_id: user.id });
 
     const newCount = monthlyCount + 1;
 
