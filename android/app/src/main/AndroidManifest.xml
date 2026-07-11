@@ -47,9 +47,6 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="com.android.vending.BILLING" />
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
     <!-- Camera is used for scanning comics but not required to install the app -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -70,11 +67,6 @@
         <intent>
             <action android:name="android.intent.action.SENDTO" />
             <data android:scheme="mailto" />
-        </intent>
-        <!-- Image picker / gallery -->
-        <intent>
-            <action android:name="android.intent.action.PICK" />
-            <data android:mimeType="image/*" />
         </intent>
     </queries>
 </manifest>
