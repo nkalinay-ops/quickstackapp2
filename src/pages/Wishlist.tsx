@@ -39,14 +39,19 @@ function formatReleaseDate(dateStr: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export function Wishlist() {
+type WishlistProps = {
+  initialSourceFilter?: SourceFilter;
+  onFilterConsumed?: () => void;
+};
+
+export function Wishlist({ initialSourceFilter, onFilterConsumed }: WishlistProps = {}) {
   const { user } = useAuth();
   const [wishlist, setWishlist] = useState<WishlistItemExtended[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<'All' | 'High' | 'Medium' | 'Low'>('All');
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
-  const [sortBy, setSortBy] = useState<SortOption>('newest');
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(initialSourceFilter ?? 'all');
+  const [sortBy, setSortBy] = useState<SortOption>(initialSourceFilter === 'pulls' ? 'release_date' : 'newest');
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     action: 'delete' | 'acquire' | null;
@@ -59,6 +64,10 @@ export function Wishlist() {
     message: string;
     type?: 'error' | 'success' | 'info';
   }>({ isOpen: false, message: '' });
+
+  useEffect(() => {
+    onFilterConsumed?.();
+  }, []);
 
   useEffect(() => {
     if (!user) return;

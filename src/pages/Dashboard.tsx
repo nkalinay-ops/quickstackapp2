@@ -127,7 +127,11 @@ export function Dashboard({ onNavigate, onNavigateToComic, onNavigateToCollectio
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-xl font-semibold">Upcoming Pulls</h2>
             <button
-              onClick={() => onNavigate('wishlist')}
+              onClick={() =>
+                window.dispatchEvent(
+                  new CustomEvent('navigate', { detail: { page: 'wishlist', sourceFilter: 'pulls' } })
+                )
+              }
               className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1"
             >
               See all <ChevronRight size={14} />

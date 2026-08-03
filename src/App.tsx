@@ -41,6 +41,7 @@ function AppContent() {
   const [preSelectComicId, setPreSelectComicId] = useState<string | null>(null);
   const [collectionInitialMode, setCollectionInitialMode] = useState<'all' | 'week' | null>(null);
   const [addPrefill, setAddPrefill] = useState<{ series?: string; issue_number?: string; publisher?: string; year?: number | null } | null>(null);
+  const [wishlistSourceFilter, setWishlistSourceFilter] = useState<'all' | 'pulls' | 'saved' | null>(null);
   const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
   // Captured before replaceState strips query params from the URL
   const [websiteMode] = useState(() => new URLSearchParams(window.location.search).get('source') === 'website');
@@ -90,6 +91,7 @@ function AppContent() {
       if (detail && typeof detail === 'object' && 'page' in detail) {
         setCurrentPage(detail.page as Page);
         if (detail.prefill) setAddPrefill(detail.prefill);
+        if (detail.sourceFilter) setWishlistSourceFilter(detail.sourceFilter);
       } else {
         setCurrentPage(detail as Page);
       }
@@ -145,7 +147,7 @@ function AppContent() {
       {currentPage === 'dashboard' && <Dashboard onNavigate={(p) => setCurrentPage(p as Page)} onNavigateToComic={navigateToComic} onNavigateToCollection={navigateToCollection} />}
       {currentPage === 'collection' && <Collection initialComicId={preSelectComicId} onComicConsumed={() => setPreSelectComicId(null)} initialMode={collectionInitialMode} onModeConsumed={() => setCollectionInitialMode(null)} />}
       {currentPage === 'add' && <AddComic prefill={addPrefill} onPrefillConsumed={() => setAddPrefill(null)} />}
-      {currentPage === 'wishlist' && <Wishlist />}
+      {currentPage === 'wishlist' && <Wishlist initialSourceFilter={wishlistSourceFilter ?? undefined} onFilterConsumed={() => setWishlistSourceFilter(null)} />}
       {currentPage === 'pull-list' && <PullList />}
       {currentPage === 'settings' && <Settings />}
       {currentPage === 'beta-keys' && isAdmin && <BetaKeys />}
