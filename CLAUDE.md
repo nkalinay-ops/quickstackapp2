@@ -215,10 +215,11 @@ Changes applied to QA that have **not** yet been deployed to production. Update 
 - `20260705141506_add_display_name_and_onboarding_to_user_profiles.sql` — adds `display_name` and `onboarding_completed_at` to `user_profiles` (new user onboarding flow)
 - `20260708222017_fix_get_user_scan_info_renewal_interval.sql` — restores configurable renewal interval and `renewal_interval` field in `get_user_scan_info` (overwritten by 20260628 migration)
 - `20260708223721_protect_scan_count_from_user_writes.sql` — trigger blocks authenticated users from directly writing to `monthly_scan_count`, `scan_month_reset_at`, `user_tier`, `is_admin` on `user_profiles`
+- `20260803085537_create_pull_list_tables.sql` — creates `pull_list_items` and `pull_list_sync_log` tables for the pull list feature
+- `20260803085638_pull_list_stub_data.sql` — stub data for pull list UI development (16 rows across 3 FOC dates, Lunar + PRH)
 
 ### Edge Functions
 
-- `update-subscription` — now sets `can_bulk_upload` based on tier (true for paid/plus, false for free)
 - `scan-comic` — increment_scan_count is now awaited (was fire-and-forget); fixes scan count not persisting after logout/login
 
 ---

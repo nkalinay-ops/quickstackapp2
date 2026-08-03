@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Shield, Users, Key, ChevronDown, ChevronUp, XCircle, Upload, Settings, AlertTriangle, Clock } from 'lucide-react';
+import { Shield, Users, Key, ChevronDown, ChevronUp, XCircle, Upload, Settings, AlertTriangle, Clock, RefreshCw, CheckCircle2, AlertCircle, SkipForward, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { PromptModal } from '../components/PromptModal';
@@ -51,6 +51,21 @@ interface BetaKey {
   notes: string | null;
 }
 
+interface SyncLogEntry {
+  id: string;
+  started_at: string;
+  completed_at: string | null;
+  trigger: 'primary' | 'retry' | 'manual';
+  status: 'running' | 'success' | 'partial' | 'error' | 'skipped';
+  lunar_rows_seen: number | null;
+  lunar_rows_upserted: number | null;
+  lunar_error: string | null;
+  prh_rows_seen: number | null;
+  prh_rows_upserted: number | null;
+  prh_error: string | null;
+  duration_ms: number | null;
+}
+
 export function AdminPanel() {
   const { refreshAdminStatus } = useAuth();
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -68,6 +83,9 @@ export function AdminPanel() {
   const [scanRenewalInterval, setScanRenewalInterval] = useState<ScanRenewalInterval>('month');
   const [scanRenewalSetting, setScanRenewalSetting] = useState<AppSetting | null>(null);
   const [savingInterval, setSavingInterval] = useState(false);
+  const [syncLog, setSyncLog] = useState<SyncLogEntry[]>([]);
+  const [syncLogLoading, setSyncLogLoading] = useState(false);
+  const [triggeringSync, setTriggeringSync] = useState(false);
 
   const loadUsers = async () => {
     try {
@@ -166,10 +184,35 @@ export function AdminPanel() {
     }
   };
 
+  const loadSyncLog = async () => {
+    setSyncLogLoading(true);
+    const { data } = await supabase
+      .from('pull_list_sync_log')
+      .select('*')
+      .order('started_at', { ascending: false })
+      .limit(20);
+    if (data) setSyncLog(data as SyncLogEntry[]);
+    setSyncLogLoading(false);
+  };
+
+  const triggerManualSync = async () => {
+    setTriggeringSync(true);
+    // Sync Now button will be wired to the edge function in Phase 5.
+    // For now, insert a placeholder log entry so the UI renders correctly.
+    await supabase.from('pull_list_sync_log').insert({
+      trigger: 'manual',
+      status: 'error',
+      lunar_error: 'Edge function not yet deployed',
+      prh_error: 'Edge function not yet deployed',
+    });
+    await loadSyncLog();
+    setTriggeringSync(false);
+  };
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      await Promise.all([loadUsers(), loadBetaKeys(), loadAppSettings()]);
+      await Promise.all([loadUsers(), loadBetaKeys(), loadAppSettings(), loadSyncLog()]);
       setLoading(false);
     };
     loadData();
@@ -846,6 +889,54 @@ export function AdminPanel() {
         </div>
       </div>
 
+      {/* Pull List Sync Log */}
+      <div className="bg-gray-800 rounded-lg border border-gray-700">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+          <div className="flex items-center gap-3">
+            <RefreshCw size={18} className="text-indigo-400" />
+            <h2 className="font-semibold text-white">Pull List Sync Log</h2>
+          </div>
+          <button
+            onClick={triggerManualSync}
+            disabled={triggeringSync}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium rounded-lg transition-colors"
+          >
+            {triggeringSync ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+            Sync Now
+          </button>
+        </div>
+
+        <div className="p-4">
+          {syncLogLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 size={24} className="animate-spin text-gray-400" />
+            </div>
+          ) : syncLog.length === 0 ? (
+            <p className="text-gray-500 text-sm text-center py-8">No sync attempts yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-gray-500 border-b border-gray-700">
+                    <th className="text-left pb-2 pr-4 font-medium">Started</th>
+                    <th className="text-left pb-2 pr-4 font-medium">Trigger</th>
+                    <th className="text-left pb-2 pr-4 font-medium">Status</th>
+                    <th className="text-left pb-2 pr-4 font-medium">Lunar</th>
+                    <th className="text-left pb-2 pr-4 font-medium">PRH</th>
+                    <th className="text-left pb-2 font-medium">Duration</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-700/50">
+                  {syncLog.map(entry => (
+                    <SyncLogRow key={entry.id} entry={entry} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
       <PromptModal
         isOpen={promptModal.isOpen}
         onClose={() => setPromptModal({ isOpen: false, userId: null })}
@@ -868,5 +959,53 @@ export function AdminPanel() {
         isDestructive={true}
       />
     </div>
+  );
+}
+
+const STATUS_CONFIG = {
+  running:  { icon: <Loader2 size={13} className="animate-spin text-blue-400" />,   label: 'Running',  className: 'text-blue-400' },
+  success:  { icon: <CheckCircle2 size={13} className="text-green-400" />,          label: 'Success',  className: 'text-green-400' },
+  partial:  { icon: <AlertTriangle size={13} className="text-yellow-400" />,         label: 'Partial',  className: 'text-yellow-400' },
+  error:    { icon: <AlertCircle size={13} className="text-red-400" />,              label: 'Error',    className: 'text-red-400' },
+  skipped:  { icon: <SkipForward size={13} className="text-gray-400" />,            label: 'Skipped',  className: 'text-gray-500' },
+} as const;
+
+function SyncLogRow({ entry }: { entry: SyncLogEntry }) {
+  const config = STATUS_CONFIG[entry.status];
+  const duration = entry.duration_ms != null
+    ? entry.duration_ms >= 1000
+      ? `${(entry.duration_ms / 1000).toFixed(1)}s`
+      : `${entry.duration_ms}ms`
+    : '—';
+
+  const lunarCell = entry.lunar_error
+    ? <span className="text-red-400" title={entry.lunar_error}>Error</span>
+    : entry.lunar_rows_seen != null
+    ? <span className="text-gray-300">{entry.lunar_rows_seen} → {entry.lunar_rows_upserted ?? 0}</span>
+    : <span className="text-gray-600">—</span>;
+
+  const prhCell = entry.prh_error
+    ? <span className="text-red-400" title={entry.prh_error}>Error</span>
+    : entry.prh_rows_seen != null
+    ? <span className="text-gray-300">{entry.prh_rows_seen} → {entry.prh_rows_upserted ?? 0}</span>
+    : <span className="text-gray-600">—</span>;
+
+  return (
+    <tr className="py-2">
+      <td className="py-2 pr-4 text-gray-400 whitespace-nowrap">
+        {new Date(entry.started_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+      </td>
+      <td className="py-2 pr-4">
+        <span className="capitalize text-gray-400">{entry.trigger}</span>
+      </td>
+      <td className="py-2 pr-4">
+        <span className={`flex items-center gap-1 ${config.className}`}>
+          {config.icon} {config.label}
+        </span>
+      </td>
+      <td className="py-2 pr-4">{lunarCell}</td>
+      <td className="py-2 pr-4">{prhCell}</td>
+      <td className="py-2 text-gray-500">{duration}</td>
+    </tr>
   );
 }

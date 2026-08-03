@@ -14,7 +14,12 @@ const todayEST = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Ameri
 
 type Mode = 'collection' | 'wishlist';
 
-export function AddComic() {
+type AddComicProps = {
+  prefill?: { series?: string; issue_number?: string; publisher?: string; year?: number | null } | null;
+  onPrefillConsumed?: () => void;
+};
+
+export function AddComic({ prefill, onPrefillConsumed }: AddComicProps = {}) {
   const { user, session, userTier, monthlyScanCount, scanRenewalInterval, setScanCount } = useAuth();
   const [mode, setMode] = useState<Mode>('collection');
 
@@ -77,6 +82,15 @@ export function AddComic() {
 
   useEffect(() => {
     scanButtonRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!prefill) return;
+    if (prefill.series) setSeries(prefill.series);
+    if (prefill.issue_number) setIssueNumber(prefill.issue_number);
+    if (prefill.publisher) setPublisher(prefill.publisher);
+    if (prefill.year != null) setYear(String(prefill.year));
+    onPrefillConsumed?.();
   }, []);
 
 

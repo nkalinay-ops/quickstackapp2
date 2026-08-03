@@ -16,8 +16,9 @@ import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
 import { EmailConfirmed } from './pages/EmailConfirmed';
 import { Onboarding } from './components/Onboarding';
+import { PullList } from './pages/PullList';
 
-type LayoutPage = 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload';
+type LayoutPage = 'dashboard' | 'collection' | 'add' | 'wishlist' | 'pull-list' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload';
 type Page = 'auth' | 'forgot-password' | 'reset-password' | 'email-confirmed' | LayoutPage;
 
 function AppContent() {
@@ -39,6 +40,7 @@ function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>(getInitialPage());
   const [preSelectComicId, setPreSelectComicId] = useState<string | null>(null);
   const [collectionInitialMode, setCollectionInitialMode] = useState<'all' | 'week' | null>(null);
+  const [addPrefill, setAddPrefill] = useState<{ series?: string; issue_number?: string; publisher?: string; year?: number | null } | null>(null);
   const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
   // Captured before replaceState strips query params from the URL
   const [websiteMode] = useState(() => new URLSearchParams(window.location.search).get('source') === 'website');
@@ -84,7 +86,13 @@ function AppContent() {
   useEffect(() => {
     const handleNavigate = (event: Event) => {
       const customEvent = event as CustomEvent;
-      setCurrentPage(customEvent.detail as Page);
+      const detail = customEvent.detail;
+      if (detail && typeof detail === 'object' && 'page' in detail) {
+        setCurrentPage(detail.page as Page);
+        if (detail.prefill) setAddPrefill(detail.prefill);
+      } else {
+        setCurrentPage(detail as Page);
+      }
     };
     window.addEventListener('navigate', handleNavigate);
     return () => window.removeEventListener('navigate', handleNavigate);
@@ -136,8 +144,9 @@ function AppContent() {
     <Layout currentPage={currentPage as LayoutPage} onNavigate={(p) => setCurrentPage(p)}>
       {currentPage === 'dashboard' && <Dashboard onNavigate={(p) => setCurrentPage(p as Page)} onNavigateToComic={navigateToComic} onNavigateToCollection={navigateToCollection} />}
       {currentPage === 'collection' && <Collection initialComicId={preSelectComicId} onComicConsumed={() => setPreSelectComicId(null)} initialMode={collectionInitialMode} onModeConsumed={() => setCollectionInitialMode(null)} />}
-      {currentPage === 'add' && <AddComic />}
+      {currentPage === 'add' && <AddComic prefill={addPrefill} onPrefillConsumed={() => setAddPrefill(null)} />}
       {currentPage === 'wishlist' && <Wishlist />}
+      {currentPage === 'pull-list' && <PullList />}
       {currentPage === 'settings' && <Settings />}
       {currentPage === 'beta-keys' && isAdmin && <BetaKeys />}
       {currentPage === 'admin' && isAdmin && <AdminPanel />}

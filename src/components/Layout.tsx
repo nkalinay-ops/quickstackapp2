@@ -1,12 +1,14 @@
 import { ReactNode } from 'react';
-import { Home, Library, Plus, Heart, Settings, Shield, Upload } from 'lucide-react';
+import { Home, Library, Plus, Heart, Settings, Shield, Upload, CalendarDays } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { isNativePlatform } from '../lib/capacitorSetup';
 
+type LayoutPage = 'dashboard' | 'collection' | 'add' | 'wishlist' | 'pull-list' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload';
+
 type LayoutProps = {
   children: ReactNode;
-  currentPage: 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload';
-  onNavigate: (page: 'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload') => void;
+  currentPage: LayoutPage;
+  onNavigate: (page: LayoutPage) => void;
 };
 
 export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
@@ -15,7 +17,19 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">
-      <main className="flex-1 overflow-y-auto pb-20">
+      <header className="fixed top-0 left-0 right-0 z-10 h-12 bg-gray-900 border-b border-gray-800 flex items-center justify-end px-4">
+        <button
+          onClick={() => onNavigate('settings')}
+          className={`p-1.5 rounded-md transition-colors ${
+            currentPage === 'settings' ? 'text-white' : 'text-gray-400 hover:text-gray-200'
+          }`}
+          aria-label="Settings"
+        >
+          <Settings size={20} />
+        </button>
+      </header>
+
+      <main className="flex-1 overflow-y-auto pt-12 pb-20">
         {children}
       </main>
 
@@ -54,6 +68,12 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
             active={currentPage === 'wishlist'}
             onClick={() => onNavigate('wishlist')}
           />
+          <NavButton
+            icon={<CalendarDays size={24} />}
+            label="Pull List"
+            active={currentPage === 'pull-list'}
+            onClick={() => onNavigate('pull-list')}
+          />
           {isAdmin && (
             <NavButton
               icon={<Shield size={24} />}
@@ -62,12 +82,6 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
               onClick={() => onNavigate('admin')}
             />
           )}
-          <NavButton
-            icon={<Settings size={24} />}
-            label="Settings"
-            active={currentPage === 'settings'}
-            onClick={() => onNavigate('settings')}
-          />
         </div>
       </nav>
     </div>
