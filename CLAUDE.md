@@ -217,6 +217,8 @@ Changes applied to QA that have **not** yet been deployed to production. Update 
 - `20260708223721_protect_scan_count_from_user_writes.sql` — trigger blocks authenticated users from directly writing to `monthly_scan_count`, `scan_month_reset_at`, `user_tier`, `is_admin` on `user_profiles`
 - `20260803085537_create_pull_list_tables.sql` — creates `pull_list_items` and `pull_list_sync_log` tables for the pull list feature
 - `20260803085638_pull_list_stub_data.sql` — stub data for pull list UI development (16 rows across 3 FOC dates, Lunar + PRH)
+- `20260803132656_replace_pull_list_stub_data.sql` — replaces stub data with 25 richer entries across 4 September release dates (Lunar single issues + PRH trades)
+- `20260803140000_add_pull_list_item_id_to_wishlist.sql` — adds `pull_list_item_id` FK to `wishlist`; enables Pulls filter tab in Wishlist and Upcoming Pulls widget on Dashboard
 
 ### Edge Functions
 

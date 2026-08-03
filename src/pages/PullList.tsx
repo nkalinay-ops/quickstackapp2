@@ -190,6 +190,7 @@ export function PullList() {
       cover_variant: null,
       total_issues: null,
       total_issues_conflict: null,
+      pull_list_item_id: item.id,
     });
 
     if (!error) {
