@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, BookOpen, Heart, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { Search, BookOpen, Heart, ChevronDown, ChevronUp, Loader2, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { AlertModal } from '../components/AlertModal';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 type PullListItem = {
   id: string;
@@ -21,8 +22,11 @@ type PullListItem = {
   cover_image_url: string | null;
 };
 
+type OwnedRecord = { series: string; issue_number: string };
+
+type AddedStatus = { inCollection: boolean; inWishlist: boolean };
+
 function parseTitleParts(title: string): { series: string; issue: string } {
-  // Match trailing issue number: "BATMAN #9" → series="BATMAN", issue="9"
   const match = title.match(/^(.+?)\s+#(\d+(?:\.\d+)?)\s*(.*)$/);
   if (match) {
     const series = match[3] ? `${match[1]} ${match[3]}`.trim() : match[1].trim();
@@ -41,6 +45,15 @@ function formatReleaseDateShort(dateStr: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function matchesOwned(item: PullListItem, owned: OwnedRecord[]): boolean {
+  const { series, issue } = parseTitleParts(item.title);
+  const s = series.toLowerCase();
+  const i = issue.toLowerCase();
+  return owned.some(
+    r => r.series.toLowerCase() === s && r.issue_number.toLowerCase() === i
+  );
+}
+
 export function PullList() {
   const { user } = useAuth();
   const [items, setItems] = useState<PullListItem[]>([]);
@@ -49,28 +62,65 @@ export function PullList() {
   const [publisherFilter, setPublisherFilter] = useState('All');
   const [formatFilter, setFormatFilter] = useState('All');
   const [releaseDateFilter, setReleaseDateFilter] = useState('All');
+
+  // Cross-reference state — populated from user's collection + wishlist on load
+  const [collectionOwned, setCollectionOwned] = useState<OwnedRecord[]>([]);
+  const [wishlistOwned, setWishlistOwned] = useState<OwnedRecord[]>([]);
+
+  // Pending add action — set when a duplicate is detected
+  const [confirmDupe, setConfirmDupe] = useState<{
+    item: PullListItem;
+    action: 'collection' | 'wishlist';
+  } | null>(null);
+
   const [addingToWishlist, setAddingToWishlist] = useState<string | null>(null);
   const [addingToCollection, setAddingToCollection] = useState<string | null>(null);
-  const [alertModal, setAlertModal] = useState<{ isOpen: boolean; title?: string; message: string; type?: 'error' | 'success' | 'info' }>({
-    isOpen: false,
-    message: '',
-  });
+  const [alertModal, setAlertModal] = useState<{
+    isOpen: boolean;
+    title?: string;
+    message: string;
+    type?: 'error' | 'success' | 'info';
+  }>({ isOpen: false, message: '' });
 
   useEffect(() => {
-    loadItems();
-  }, []);
+    if (user) loadAll();
+  }, [user]);
 
-  async function loadItems() {
+  async function loadAll() {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('pull_list_items')
-      .select('id, source, sku, title, publisher, format, variant_label, price, foc_date, on_sale_date, writer, artist, upc_isbn, cover_image_url')
-      .order('on_sale_date', { ascending: true })
-      .order('title', { ascending: true });
+    const [pullRes, comicsRes, wishlistRes] = await Promise.all([
+      supabase
+        .from('pull_list_items')
+        .select('id, source, sku, title, publisher, format, variant_label, price, foc_date, on_sale_date, writer, artist, upc_isbn, cover_image_url')
+        .order('on_sale_date', { ascending: true })
+        .order('title', { ascending: true }),
+      supabase
+        .from('comics')
+        .select('series, issue_number')
+        .eq('user_id', user!.id),
+      supabase
+        .from('wishlist')
+        .select('series, issue_number')
+        .eq('user_id', user!.id),
+    ]);
 
-    if (!error && data) setItems(data as PullListItem[]);
+    if (pullRes.data) setItems(pullRes.data as PullListItem[]);
+    if (comicsRes.data) setCollectionOwned(comicsRes.data as OwnedRecord[]);
+    if (wishlistRes.data) setWishlistOwned(wishlistRes.data as OwnedRecord[]);
     setLoading(false);
   }
+
+  // Derive added status for every pull list item
+  const addedStatus = useMemo<Record<string, AddedStatus>>(() => {
+    const result: Record<string, AddedStatus> = {};
+    for (const item of items) {
+      result[item.id] = {
+        inCollection: matchesOwned(item, collectionOwned),
+        inWishlist: matchesOwned(item, wishlistOwned),
+      };
+    }
+    return result;
+  }, [items, collectionOwned, wishlistOwned]);
 
   const publishers = useMemo(() => {
     const set = new Set(items.map(i => i.publisher).filter(Boolean) as string[]);
@@ -94,15 +144,16 @@ export function PullList() {
       if (releaseDateFilter !== 'All' && item.on_sale_date !== releaseDateFilter) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
-        if (!item.title.toLowerCase().includes(q) &&
-            !(item.publisher ?? '').toLowerCase().includes(q) &&
-            !(item.writer ?? '').toLowerCase().includes(q)) return false;
+        if (
+          !item.title.toLowerCase().includes(q) &&
+          !(item.publisher ?? '').toLowerCase().includes(q) &&
+          !(item.writer ?? '').toLowerCase().includes(q)
+        ) return false;
       }
       return true;
     });
   }, [items, publisherFilter, formatFilter, releaseDateFilter, searchQuery]);
 
-  // Group by on_sale_date
   const groupedByReleaseDate = useMemo(() => {
     const groups = new Map<string, PullListItem[]>();
     for (const item of filtered) {
@@ -113,7 +164,17 @@ export function PullList() {
     return groups;
   }, [filtered]);
 
-  async function addToWishlist(item: PullListItem) {
+  // ── Add to Wishlist ──────────────────────────────────────────────────────
+
+  function handleAddToWishlist(item: PullListItem) {
+    if (addedStatus[item.id]?.inWishlist) {
+      setConfirmDupe({ item, action: 'wishlist' });
+    } else {
+      doAddToWishlist(item);
+    }
+  }
+
+  async function doAddToWishlist(item: PullListItem) {
     if (!user) return;
     setAddingToWishlist(item.id);
     const { series, issue } = parseTitleParts(item.title);
@@ -131,6 +192,9 @@ export function PullList() {
       total_issues_conflict: null,
     });
 
+    if (!error) {
+      setWishlistOwned(prev => [...prev, { series, issue_number: issue }]);
+    }
     setAddingToWishlist(null);
     setAlertModal({
       isOpen: true,
@@ -140,7 +204,17 @@ export function PullList() {
     });
   }
 
-  async function addToCollection(item: PullListItem) {
+  // ── Add to Collection ────────────────────────────────────────────────────
+
+  function handleAddToCollection(item: PullListItem) {
+    if (addedStatus[item.id]?.inCollection) {
+      setConfirmDupe({ item, action: 'collection' });
+    } else {
+      doAddToCollection(item);
+    }
+  }
+
+  async function doAddToCollection(item: PullListItem) {
     if (!user) return;
     setAddingToCollection(item.id);
     const { series, issue } = parseTitleParts(item.title);
@@ -167,6 +241,9 @@ export function PullList() {
       purchase_date: null,
     });
 
+    if (!error) {
+      setCollectionOwned(prev => [...prev, { series, issue_number: issue }]);
+    }
     setAddingToCollection(null);
     setAlertModal({
       isOpen: true,
@@ -175,6 +252,25 @@ export function PullList() {
       type: error ? 'error' : 'success',
     });
   }
+
+  // ── Duplicate confirmation ───────────────────────────────────────────────
+
+  function handleDupeConfirm() {
+    if (!confirmDupe) return;
+    const { item, action } = confirmDupe;
+    setConfirmDupe(null);
+    if (action === 'collection') doAddToCollection(item);
+    else doAddToWishlist(item);
+  }
+
+  const dupeTitle = confirmDupe ? parseTitleParts(confirmDupe.item.title).series : '';
+  const dupeMessage = confirmDupe
+    ? confirmDupe.action === 'collection'
+      ? `"${dupeTitle}" is already in your collection. Add another copy anyway?`
+      : `"${dupeTitle}" is already in your wishlist. Add it again?`
+    : '';
+
+  // ── Render ───────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -254,7 +350,9 @@ export function PullList() {
                   {releaseDate !== 'Unknown' ? formatReleaseDate(releaseDate) : 'Date Unknown'}
                 </h2>
                 <div className="flex-1 h-px bg-gray-800" />
-                <span className="text-xs text-gray-500">{group.length} {group.length === 1 ? 'item' : 'items'}</span>
+                <span className="text-xs text-gray-500">
+                  {group.length} {group.length === 1 ? 'item' : 'items'}
+                </span>
               </div>
 
               <div className="space-y-3">
@@ -262,8 +360,9 @@ export function PullList() {
                   <PullListCard
                     key={item.id}
                     item={item}
-                    onAddToWishlist={addToWishlist}
-                    onAddToCollection={addToCollection}
+                    status={addedStatus[item.id] ?? { inCollection: false, inWishlist: false }}
+                    onAddToWishlist={handleAddToWishlist}
+                    onAddToCollection={handleAddToCollection}
                     addingToWishlist={addingToWishlist === item.id}
                     addingToCollection={addingToCollection === item.id}
                   />
@@ -281,19 +380,39 @@ export function PullList() {
         type={alertModal.type}
         onClose={() => setAlertModal(prev => ({ ...prev, isOpen: false }))}
       />
+
+      <ConfirmModal
+        isOpen={!!confirmDupe}
+        title="Already Added"
+        message={dupeMessage}
+        confirmText="Add Anyway"
+        cancelText="Cancel"
+        onConfirm={handleDupeConfirm}
+        onClose={() => setConfirmDupe(null)}
+      />
     </div>
   );
 }
 
+// ── Card ──────────────────────────────────────────────────────────────────────
+
 type PullListCardProps = {
   item: PullListItem;
-  onAddToWishlist: (item: PullListItem) => Promise<void>;
-  onAddToCollection: (item: PullListItem) => Promise<void>;
+  status: AddedStatus;
+  onAddToWishlist: (item: PullListItem) => void;
+  onAddToCollection: (item: PullListItem) => void;
   addingToWishlist: boolean;
   addingToCollection: boolean;
 };
 
-function PullListCard({ item, onAddToWishlist, onAddToCollection, addingToWishlist, addingToCollection }: PullListCardProps) {
+function PullListCard({
+  item,
+  status,
+  onAddToWishlist,
+  onAddToCollection,
+  addingToWishlist,
+  addingToCollection,
+}: PullListCardProps) {
   const [expanded, setExpanded] = useState(false);
   const isAdding = addingToWishlist || addingToCollection;
 
@@ -320,7 +439,9 @@ function PullListCard({ item, onAddToWishlist, onAddToCollection, addingToWishli
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-white leading-tight line-clamp-2">{item.title}</p>
+              <p className="text-sm font-semibold text-white leading-tight line-clamp-2">
+                {item.title}
+              </p>
               {item.variant_label && (
                 <p className="text-xs text-indigo-400 mt-0.5">{item.variant_label}</p>
               )}
@@ -337,15 +458,37 @@ function PullListCard({ item, onAddToWishlist, onAddToCollection, addingToWishli
 
           <div className="flex items-center gap-2 mt-2 flex-wrap">
             {item.format && (
-              <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">{item.format}</span>
+              <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">
+                {item.format}
+              </span>
             )}
             {item.price != null && (
               <span className="text-xs text-gray-400">${item.price.toFixed(2)}</span>
             )}
             {item.on_sale_date && (
-              <span className="text-xs text-gray-500">On sale {formatReleaseDateShort(item.on_sale_date)}</span>
+              <span className="text-xs text-gray-500">
+                On sale {formatReleaseDateShort(item.on_sale_date)}
+              </span>
             )}
           </div>
+
+          {/* Added status badges */}
+          {(status.inCollection || status.inWishlist) && (
+            <div className="flex gap-1.5 mt-2 flex-wrap">
+              {status.inCollection && (
+                <span className="inline-flex items-center gap-1 text-xs bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-0.5 rounded-full">
+                  <CheckCircle2 size={11} />
+                  In Collection
+                </span>
+              )}
+              {status.inWishlist && (
+                <span className="inline-flex items-center gap-1 text-xs bg-pink-500/10 text-pink-400 border border-pink-500/20 px-2 py-0.5 rounded-full">
+                  <Heart size={11} />
+                  In Wishlist
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -353,9 +496,15 @@ function PullListCard({ item, onAddToWishlist, onAddToCollection, addingToWishli
       {expanded && (
         <div className="px-3 pb-3 border-t border-gray-800 pt-2">
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400">
-            {item.writer && <span><span className="text-gray-500">Writer</span> {item.writer}</span>}
-            {item.artist && <span><span className="text-gray-500">Artist</span> {item.artist}</span>}
-            {item.upc_isbn && <span><span className="text-gray-500">ISBN</span> {item.upc_isbn}</span>}
+            {item.writer && (
+              <span><span className="text-gray-500">Writer</span> {item.writer}</span>
+            )}
+            {item.artist && (
+              <span><span className="text-gray-500">Artist</span> {item.artist}</span>
+            )}
+            {item.upc_isbn && (
+              <span><span className="text-gray-500">ISBN</span> {item.upc_isbn}</span>
+            )}
           </div>
         </div>
       )}
@@ -365,26 +514,34 @@ function PullListCard({ item, onAddToWishlist, onAddToCollection, addingToWishli
         <button
           onClick={() => onAddToWishlist(item)}
           disabled={isAdding}
-          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed border-r border-gray-800"
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors border-r border-gray-800 disabled:opacity-50 disabled:cursor-not-allowed ${
+            status.inWishlist
+              ? 'text-pink-400 hover:text-pink-300 hover:bg-gray-800'
+              : 'text-gray-300 hover:text-white hover:bg-gray-800'
+          }`}
         >
           {addingToWishlist ? (
             <Loader2 size={13} className="animate-spin" />
           ) : (
-            <Heart size={13} />
+            <Heart size={13} className={status.inWishlist ? 'fill-current' : ''} />
           )}
-          Add to Wishlist
+          {status.inWishlist ? 'In Wishlist' : 'Add to Wishlist'}
         </button>
         <button
           onClick={() => onAddToCollection(item)}
           disabled={isAdding}
-          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+            status.inCollection
+              ? 'text-green-400 hover:text-green-300 hover:bg-gray-800'
+              : 'text-gray-300 hover:text-white hover:bg-gray-800'
+          }`}
         >
           {addingToCollection ? (
             <Loader2 size={13} className="animate-spin" />
           ) : (
-            <BookOpen size={13} />
+            <CheckCircle2 size={13} className={status.inCollection ? 'fill-current' : ''} />
           )}
-          Add to Collection
+          {status.inCollection ? 'In Collection' : 'Add to Collection'}
         </button>
       </div>
     </div>
