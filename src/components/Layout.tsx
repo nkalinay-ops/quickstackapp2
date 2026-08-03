@@ -70,7 +70,7 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
           />
           <NavButton
             icon={<CalendarDays size={24} />}
-            label="Pull List"
+            label="New Comics"
             active={currentPage === 'pull-list'}
             onClick={() => onNavigate('pull-list')}
           />

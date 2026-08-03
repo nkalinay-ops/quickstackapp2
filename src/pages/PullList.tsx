@@ -31,13 +31,12 @@ function parseTitleParts(title: string): { series: string; issue: string } {
   return { series: title.trim(), issue: '' };
 }
 
-function formatFocDate(dateStr: string): string {
+function formatReleaseDate(dateStr: string): string {
   const date = new Date(dateStr + 'T00:00:00');
   return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
-function formatOnSaleDate(dateStr: string | null): string {
-  if (!dateStr) return '';
+function formatReleaseDateShort(dateStr: string): string {
   const date = new Date(dateStr + 'T00:00:00');
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
@@ -49,6 +48,7 @@ export function PullList() {
   const [searchQuery, setSearchQuery] = useState('');
   const [publisherFilter, setPublisherFilter] = useState('All');
   const [formatFilter, setFormatFilter] = useState('All');
+  const [releaseDateFilter, setReleaseDateFilter] = useState('All');
   const [addingToWishlist, setAddingToWishlist] = useState<string | null>(null);
   const [addingToCollection, setAddingToCollection] = useState<string | null>(null);
   const [alertModal, setAlertModal] = useState<{ isOpen: boolean; title?: string; message: string; type?: 'error' | 'success' | 'info' }>({
@@ -65,7 +65,7 @@ export function PullList() {
     const { data, error } = await supabase
       .from('pull_list_items')
       .select('id, source, sku, title, publisher, format, variant_label, price, foc_date, on_sale_date, writer, artist, upc_isbn, cover_image_url')
-      .order('foc_date', { ascending: true })
+      .order('on_sale_date', { ascending: true })
       .order('title', { ascending: true });
 
     if (!error && data) setItems(data as PullListItem[]);
@@ -82,10 +82,16 @@ export function PullList() {
     return ['All', ...Array.from(set).sort()];
   }, [items]);
 
+  const releaseDates = useMemo(() => {
+    const set = new Set(items.map(i => i.on_sale_date).filter(Boolean) as string[]);
+    return ['All', ...Array.from(set).sort()];
+  }, [items]);
+
   const filtered = useMemo(() => {
     return items.filter(item => {
       if (publisherFilter !== 'All' && item.publisher !== publisherFilter) return false;
       if (formatFilter !== 'All' && item.format !== formatFilter) return false;
+      if (releaseDateFilter !== 'All' && item.on_sale_date !== releaseDateFilter) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         if (!item.title.toLowerCase().includes(q) &&
@@ -94,13 +100,13 @@ export function PullList() {
       }
       return true;
     });
-  }, [items, publisherFilter, formatFilter, searchQuery]);
+  }, [items, publisherFilter, formatFilter, releaseDateFilter, searchQuery]);
 
-  // Group by FOC date
-  const groupedByFoc = useMemo(() => {
+  // Group by on_sale_date
+  const groupedByReleaseDate = useMemo(() => {
     const groups = new Map<string, PullListItem[]>();
     for (const item of filtered) {
-      const key = item.foc_date ?? 'Unknown';
+      const key = item.on_sale_date ?? 'Unknown';
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(item);
     }
@@ -134,23 +140,40 @@ export function PullList() {
     });
   }
 
-  function addToCollection(item: PullListItem) {
+  async function addToCollection(item: PullListItem) {
+    if (!user) return;
     setAddingToCollection(item.id);
     const { series, issue } = parseTitleParts(item.title);
-    // Pre-fill AddComic via navigation state on the navigate event
-    const year = item.on_sale_date ? new Date(item.on_sale_date + 'T00:00:00').getFullYear() : null;
-    window.dispatchEvent(new CustomEvent('navigate', {
-      detail: {
-        page: 'add',
-        prefill: {
-          series,
-          issue_number: issue,
-          publisher: item.publisher ?? '',
-          year,
-        },
-      },
-    }));
+    const year = item.on_sale_date
+      ? new Date(item.on_sale_date + 'T00:00:00').getFullYear()
+      : null;
+
+    const { error } = await supabase.from('comics').insert({
+      user_id: user.id,
+      series,
+      issue_number: issue,
+      publisher: item.publisher ?? '',
+      year,
+      condition: '',
+      story: '',
+      notes: '',
+      color_image_url: item.cover_image_url ?? null,
+      bw_image_url: null,
+      copy_count: 1,
+      cover_variant: null,
+      total_issues: null,
+      total_issues_conflict: null,
+      purchase_price: null,
+      purchase_date: null,
+    });
+
     setAddingToCollection(null);
+    setAlertModal({
+      isOpen: true,
+      title: error ? 'Error' : 'Added to Collection',
+      message: error ? error.message : `"${series}" added to your collection.`,
+      type: error ? 'error' : 'success',
+    });
   }
 
   if (loading) {
@@ -164,8 +187,8 @@ export function PullList() {
   return (
     <div className="min-h-screen bg-gray-950 text-white">
       <div className="max-w-2xl mx-auto px-4 py-6">
-        <h1 className="text-2xl font-bold mb-1">Pull List</h1>
-        <p className="text-gray-400 text-sm mb-5">Upcoming releases by Final Order Cutoff date</p>
+        <h1 className="text-2xl font-bold mb-1">New Comics</h1>
+        <p className="text-gray-400 text-sm mb-5">Upcoming releases by store date</p>
 
         {/* Search */}
         <div className="relative mb-3">
@@ -181,6 +204,17 @@ export function PullList() {
 
         {/* Filters */}
         <div className="flex gap-2 mb-6">
+          <select
+            value={releaseDateFilter}
+            onChange={e => setReleaseDateFilter(e.target.value)}
+            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+          >
+            {releaseDates.map(d => (
+              <option key={d} value={d}>
+                {d === 'All' ? 'All Dates' : formatReleaseDateShort(d)}
+              </option>
+            ))}
+          </select>
           <select
             value={publisherFilter}
             onChange={e => setPublisherFilter(e.target.value)}
@@ -205,7 +239,7 @@ export function PullList() {
         {items.length === 0 ? (
           <div className="text-center py-16 text-gray-500">
             <p className="text-lg font-medium mb-1">No upcoming releases</p>
-            <p className="text-sm">Check back after the next sync.</p>
+            <p className="text-sm">Check back soon.</p>
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-16 text-gray-500">
@@ -213,11 +247,11 @@ export function PullList() {
             <p className="text-sm">Try adjusting your filters or search.</p>
           </div>
         ) : (
-          Array.from(groupedByFoc.entries()).map(([focDate, group]) => (
-            <div key={focDate} className="mb-8">
+          Array.from(groupedByReleaseDate.entries()).map(([releaseDate, group]) => (
+            <div key={releaseDate} className="mb-8">
               <div className="flex items-center gap-3 mb-3">
                 <h2 className="text-xs font-semibold uppercase tracking-widest text-indigo-400">
-                  FOC {focDate !== 'Unknown' ? formatFocDate(focDate) : 'Unknown'}
+                  {releaseDate !== 'Unknown' ? formatReleaseDate(releaseDate) : 'Date Unknown'}
                 </h2>
                 <div className="flex-1 h-px bg-gray-800" />
                 <span className="text-xs text-gray-500">{group.length} {group.length === 1 ? 'item' : 'items'}</span>
@@ -253,8 +287,8 @@ export function PullList() {
 
 type PullListCardProps = {
   item: PullListItem;
-  onAddToWishlist: (item: PullListItem) => void;
-  onAddToCollection: (item: PullListItem) => void;
+  onAddToWishlist: (item: PullListItem) => Promise<void>;
+  onAddToCollection: (item: PullListItem) => Promise<void>;
   addingToWishlist: boolean;
   addingToCollection: boolean;
 };
@@ -309,7 +343,7 @@ function PullListCard({ item, onAddToWishlist, onAddToCollection, addingToWishli
               <span className="text-xs text-gray-400">${item.price.toFixed(2)}</span>
             )}
             {item.on_sale_date && (
-              <span className="text-xs text-gray-500">On sale {formatOnSaleDate(item.on_sale_date)}</span>
+              <span className="text-xs text-gray-500">On sale {formatReleaseDateShort(item.on_sale_date)}</span>
             )}
           </div>
         </div>
@@ -318,11 +352,10 @@ function PullListCard({ item, onAddToWishlist, onAddToCollection, addingToWishli
       {/* Expanded details */}
       {expanded && (
         <div className="px-3 pb-3 border-t border-gray-800 pt-2">
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400 mb-3">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400">
             {item.writer && <span><span className="text-gray-500">Writer</span> {item.writer}</span>}
             {item.artist && <span><span className="text-gray-500">Artist</span> {item.artist}</span>}
-            {item.upc_isbn && <span><span className="text-gray-500">SKU</span> {item.upc_isbn}</span>}
-            <span><span className="text-gray-500">Source</span> {item.source === 'lunar' ? 'Lunar Distribution' : 'PRH Comics'}</span>
+            {item.upc_isbn && <span><span className="text-gray-500">ISBN</span> {item.upc_isbn}</span>}
           </div>
         </div>
       )}
