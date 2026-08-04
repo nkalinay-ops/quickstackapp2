@@ -20,5 +20,8 @@ port = 54323
 [functions.update-subscription]
 verify_jwt = false
 
+[functions.sync-pull-list]
+verify_jwt = false
+
 # Note: Set SUPABASE_ACCESS_TOKEN environment variable for authentication
 # You can get this from: https://app.supabase.com/account/tokens

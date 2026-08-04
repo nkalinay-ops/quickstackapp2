@@ -223,6 +223,7 @@ Changes applied to QA that have **not** yet been deployed to production. Update 
 ### Edge Functions
 
 - `scan-comic` — increment_scan_count is now awaited (was fire-and-forget); fixes scan count not persisting after logout/login
+- `sync-pull-list` — new function; fetches Lunar xlsx + PRH DOM, normalizes, upserts to pull_list_items, logs to pull_list_sync_log. Requires PULL_LIST_SYNC_SECRET env var set in Supabase dashboard.
 
 ---
 
