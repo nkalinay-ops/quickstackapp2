@@ -100,17 +100,21 @@ function parsePRHDate(raw: string | undefined): string | null {
 
 // ── Lunar ──────────────────────────────────────────────────────────────────────
 
-// FOC dates are always on Mondays. Compute the current/most-recent Monday
-// and the next 2, matching the 3-date window Lunar shows on their homepage.
-// This avoids scraping the Lunar homepage, which blocks cloud/datacenter IPs.
+// FOC dates are always on Mondays. Fetch 4 weeks back through 2 weeks forward
+// so the window covers comics on shelves NOW as well as upcoming releases.
+// (FOC → on_sale is ~3-4 weeks, so last Monday's FOC = releases ~3 weeks out;
+//  we need to go back 4 Mondays to capture the current release week.)
 function computeLunarFocDates(): string[] {
   const today = new Date();
   const dow = today.getDay(); // 0=Sun, 1=Mon…6=Sat
   const daysToLastMonday = dow === 0 ? 6 : dow - 1;
+  const lastMonday = new Date(today);
+  lastMonday.setDate(today.getDate() - daysToLastMonday);
+
   const dates: string[] = [];
-  for (let i = 0; i < 3; i++) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - daysToLastMonday + i * 7);
+  for (let i = -4; i <= 2; i++) {  // 4 back, current, 2 forward = 7 FOC dates
+    const d = new Date(lastMonday);
+    d.setDate(lastMonday.getDate() + i * 7);
     // Lunar expects "M/D/YYYY 12:00:00 AM" (no zero-padding on M or D)
     dates.push(`${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()} 12:00:00 AM`);
   }
@@ -266,18 +270,21 @@ function parseCardsFromHtml(html: string, parser: DOMParser, now: string): { ite
   return { items, cardCount: cards.length };
 }
 
-// Returns the Monday-aligned FOC date range for the current 3-week sync window.
+// Returns the Monday-aligned FOC date range: 4 weeks back through 2 weeks forward.
+// Mirrors the Lunar window so both sources cover the same release dates.
 // Format: MM/DD/YYYY (zero-padded), matching what PRH's get_product_list expects.
 function computePRHDateRange(): { from: string; to: string } {
   const today = new Date();
   const dow = today.getDay(); // 0=Sun…6=Sat
   const daysToLastMonday = dow === 0 ? 6 : dow - 1;
+  const lastMonday = new Date(today);
+  lastMonday.setDate(today.getDate() - daysToLastMonday);
 
-  const from = new Date(today);
-  from.setDate(today.getDate() - daysToLastMonday);
+  const from = new Date(lastMonday);
+  from.setDate(lastMonday.getDate() - 28); // 4 weeks back
 
-  const to = new Date(from);
-  to.setDate(from.getDate() + 14); // current + next 2 Mondays = 3 FOC dates
+  const to = new Date(lastMonday);
+  to.setDate(lastMonday.getDate() + 14); // 2 weeks forward
 
   const fmt = (d: Date) =>
     `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;
