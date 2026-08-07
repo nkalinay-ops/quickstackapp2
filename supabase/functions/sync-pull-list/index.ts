@@ -417,9 +417,15 @@ async function shouldSkip(client: any, trigger: Trigger): Promise<boolean> {
 
 const SYNC_SECRET = Deno.env.get("PULL_LIST_SYNC_SECRET") ?? "";
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 200 });
+    return new Response(null, { status: 200, headers: CORS_HEADERS });
   }
 
   const authHeader = req.headers.get("Authorization") ?? "";
@@ -446,7 +452,7 @@ Deno.serve(async (req: Request) => {
   if (!authorized) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
-      headers: { "Content-Type": "application/json" },
+      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
     });
   }
 
@@ -543,7 +549,7 @@ Deno.serve(async (req: Request) => {
     JSON.stringify({ status, lunarRowsSeen, lunarRowsUpserted, prhRowsSeen, prhRowsUpserted, lunarError, prhError, durationMs }),
     {
       status: status === "error" ? 500 : 200,
-      headers: { "Content-Type": "application/json" },
+      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
     }
   );
 });
