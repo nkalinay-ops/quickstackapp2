@@ -76,6 +76,14 @@ async function fetchWithTimeout(url: string, opts: RequestInit = {}): Promise<Re
 }
 
 
+// ── Formatters ────────────────────────────────────────────────────────────────
+
+// Normalizes format strings to Title Case so "SOFTCOVER" and "softcover"
+// both become "Softcover" and can be grouped/filtered consistently.
+function titleCase(s: string): string {
+  return s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+}
+
 // ── Date parsers ───────────────────────────────────────────────────────────────
 
 function parseLunarDate(raw: string | undefined): string | null {
@@ -138,7 +146,7 @@ function normalizeLunarRow(row: Record<string, any>, now: string): PullListRow |
     sku,
     title,
     publisher: String(row.Publisher ?? "").trim() || null,
-    format: String(row.CoverType ?? "").trim() || null,
+    format: String(row.CoverType ?? "").trim() ? titleCase(String(row.CoverType).trim()) : null,
     variant_label: null,
     price,
     foc_date: parseLunarDate(String(row.FinalOrderCutoff ?? "")),
@@ -233,7 +241,8 @@ function normalizePRHCard(card: DomEl, now: string): PullListRow | null {
     .filter(Boolean)
     .join(", ");
 
-  const format = card.querySelector(".carousel-meta-format")?.textContent?.trim() || null;
+  const formatRaw = card.querySelector(".carousel-meta-format")?.textContent?.trim();
+  const format = formatRaw ? titleCase(formatRaw) : null;
   const publisher = card.querySelector(".carousel-meta-division")?.textContent?.trim() || null;
   const variantLabel = card.querySelector(".variant-cover-flag")?.textContent?.trim() || null;
 
