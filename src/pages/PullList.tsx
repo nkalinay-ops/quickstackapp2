@@ -92,6 +92,7 @@ export function PullList() {
       supabase
         .from('pull_list_items')
         .select('id, source, sku, title, publisher, format, variant_label, price, foc_date, on_sale_date, writer, artist, upc_isbn, cover_image_url')
+        .or('format.is.null,format.not.in.(Board Book,Book & Toy,Boxed Set,Cards,Merchandise)')
         .order('on_sale_date', { ascending: true })
         .order('title', { ascending: true }),
       supabase
