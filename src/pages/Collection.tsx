@@ -563,7 +563,7 @@ export function Collection({ initialComicId, onComicConsumed, initialMode, onMod
     }
   };
 
-  const conditions = ['Mint', 'Near Mint', 'Very Fine', 'Very Good', 'Fine', 'Good', 'Fair', 'Poor'];
+  const conditions = ['Mint', 'Near Mint', 'Very Fine', 'Fine', 'Very Good', 'Good', 'Fair', 'Poor'];
 
   // ── Loading ───────────────────────────────────────────────────────────────
 

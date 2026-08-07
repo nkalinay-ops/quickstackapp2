@@ -219,11 +219,12 @@ Changes applied to QA that have **not** yet been deployed to production. Update 
 - `20260803085638_pull_list_stub_data.sql` — stub data for pull list UI development (16 rows across 3 FOC dates, Lunar + PRH)
 - `20260803132656_replace_pull_list_stub_data.sql` — replaces stub data with 25 richer entries across 4 September release dates (Lunar single issues + PRH trades)
 - `20260803140000_add_pull_list_item_id_to_wishlist.sql` — adds `pull_list_item_id` FK to `wishlist`; enables Pulls filter tab in Wishlist and Upcoming Pulls widget on Dashboard
+- `20260806211925_setup_pull_list_sync_cron.sql` — enables pg_cron, creates `trigger_pull_list_sync()` wrapper, schedules primary (Mon 6AM UTC) and retry (Mon 11AM UTC) cron jobs. **Requires manual secret insert: `INSERT INTO app_settings (key, value) VALUES ('pull_list_sync_secret', '<secret>')`**
 
 ### Edge Functions
 
 - `scan-comic` — increment_scan_count is now awaited (was fire-and-forget); fixes scan count not persisting after logout/login
-- `sync-pull-list` — new function; fetches Lunar xlsx + PRH DOM, normalizes, upserts to pull_list_items, logs to pull_list_sync_log. Requires PULL_LIST_SYNC_SECRET env var set in Supabase dashboard.
+- `sync-pull-list` — new function; fetches Lunar xlsx + PRH DOM, normalizes, upserts to pull_list_items, logs to pull_list_sync_log. Deployed to QA. Requires PULL_LIST_SYNC_SECRET env var set in Supabase dashboard secrets before it can be called.
 
 ---
 

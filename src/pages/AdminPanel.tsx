@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Shield, Users, Key, ChevronDown, ChevronUp, XCircle, Upload, Settings, AlertTriangle, Clock, RefreshCw, CheckCircle2, AlertCircle, SkipForward, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -86,6 +86,7 @@ export function AdminPanel() {
   const [syncLog, setSyncLog] = useState<SyncLogEntry[]>([]);
   const [syncLogLoading, setSyncLogLoading] = useState(false);
   const [triggeringSync, setTriggeringSync] = useState(false);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadUsers = async () => {
     try {
@@ -195,18 +196,46 @@ export function AdminPanel() {
     setSyncLogLoading(false);
   };
 
+  const stopPolling = () => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  };
+
   const triggerManualSync = async () => {
     setTriggeringSync(true);
-    // Sync Now button will be wired to the edge function in Phase 5.
-    // For now, insert a placeholder log entry so the UI renders correctly.
-    await supabase.from('pull_list_sync_log').insert({
-      trigger: 'manual',
-      status: 'error',
-      lunar_error: 'Edge function not yet deployed',
-      prh_error: 'Edge function not yet deployed',
-    });
-    await loadSyncLog();
-    setTriggeringSync(false);
+    setError(null);
+    stopPolling();
+    pollIntervalRef.current = setInterval(loadSyncLog, 4000);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('No active session');
+
+      const resp = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-pull-list`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ trigger: 'manual' }),
+        }
+      );
+
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error ?? `Sync failed: ${resp.status}`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sync failed');
+    } finally {
+      stopPolling();
+      await loadSyncLog();
+      setTriggeringSync(false);
+    }
   };
 
   useEffect(() => {
@@ -216,6 +245,7 @@ export function AdminPanel() {
       setLoading(false);
     };
     loadData();
+    return () => stopPolling();
   }, []);
 
   const handlePromoteAdmin = async (userId: string) => {
@@ -421,6 +451,7 @@ export function AdminPanel() {
     activeBetaKeys: betaKeys.filter(k => k.is_active && !k.redeemed_at).length,
     terminatedUsers: users.filter(u => u.termination).length,
     paidUsers: users.filter(u => u.user_tier === 'paid' || u.user_tier === 'plus').length,
+    bulkUploadUsers: users.filter(u => u.can_bulk_upload).length,
   };
 
   if (loading) {

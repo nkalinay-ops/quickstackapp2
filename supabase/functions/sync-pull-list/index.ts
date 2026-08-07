@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
-import * as XLSX from "npm:xlsx@0.18.5";
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 import { DOMParser } from "https://deno.land/x/deno_dom@v0.1.48/deno-dom-wasm.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -40,36 +40,41 @@ interface DomEl {
 
 const CHUNK_SIZE = 100;
 const MAX_PRH_PAGES = 25;
-const FETCH_TIMEOUT_MS = 30_000;
-const LUNAR_HOME = "https://lunardistribution.com";
+const FETCH_TIMEOUT_MS = 15_000;
+const LUNAR_TIMEOUT_MS = 60_000;
 const LUNAR_DATA_BASE = "https://www.lunardistribution.com/home/productdatafile";
-const PRH_LIST_URL = "https://prhcomics.com/dynamic-titlelist/comics-foc-date-one-week-2/";
-const PRH_AJAX_FALLBACK = "https://prhcomics.com/wp-admin/admin-ajax.php";
+const PRH_AJAX_URL = "https://prhcomics.com/wp/wp-admin/admin-ajax.php";
+const PRH_POST_ID = "16805";
 
 // ── Fetch helpers ──────────────────────────────────────────────────────────────
+
+// Browser-like headers to avoid bot detection / 403s from distributor sites
+const BROWSER_HEADERS: Record<string, string> = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Accept-Encoding": "gzip, deflate, br",
+  "Cache-Control": "no-cache",
+  "Pragma": "no-cache",
+};
 
 async function fetchWithTimeout(url: string, opts: RequestInit = {}): Promise<Response> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
-    return await fetch(url, { ...opts, signal: ctrl.signal });
+    return await fetch(url, {
+      ...opts,
+      headers: {
+        ...BROWSER_HEADERS,
+        ...((opts.headers ?? {}) as Record<string, string>),
+      },
+      signal: ctrl.signal,
+    });
   } finally {
     clearTimeout(timer);
   }
 }
 
-// Searches for var name = "value" or var name = 'value' patterns in inline JS
-function extractJsVar(html: string, name: string): string | null {
-  for (const re of [
-    new RegExp(`(?:var|let|const)\\s+${name}\\s*=\\s*"([^"]+)"`),
-    new RegExp(`(?:var|let|const)\\s+${name}\\s*=\\s*'([^']+)'`),
-    new RegExp(`"${name}"\\s*:\\s*"([^"]+)"`),
-  ]) {
-    const m = html.match(re);
-    if (m) return m[1];
-  }
-  return null;
-}
 
 // ── Date parsers ───────────────────────────────────────────────────────────────
 
@@ -95,20 +100,20 @@ function parsePRHDate(raw: string | undefined): string | null {
 
 // ── Lunar ──────────────────────────────────────────────────────────────────────
 
-async function getLunarFocDates(parser: DOMParser): Promise<string[]> {
-  const resp = await fetchWithTimeout(LUNAR_HOME);
-  if (!resp.ok) throw new Error(`Lunar homepage fetch failed: ${resp.status}`);
-  const html = await resp.text();
-  // deno-lint-ignore no-explicit-any
-  const doc = parser.parseFromString(html, "text/html") as any;
-  if (!doc) throw new Error("Lunar homepage: failed to parse HTML");
-
+// FOC dates are always on Mondays. Compute the current/most-recent Monday
+// and the next 2, matching the 3-date window Lunar shows on their homepage.
+// This avoids scraping the Lunar homepage, which blocks cloud/datacenter IPs.
+function computeLunarFocDates(): string[] {
+  const today = new Date();
+  const dow = today.getDay(); // 0=Sun, 1=Mon…6=Sat
+  const daysToLastMonday = dow === 0 ? 6 : dow - 1;
   const dates: string[] = [];
-  for (const btn of doc.querySelectorAll("button.datafile.foc")) {
-    const val = (btn as DomEl).getAttribute("data-val");
-    if (val) dates.push(val);
+  for (let i = 0; i < 3; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - daysToLastMonday + i * 7);
+    // Lunar expects "M/D/YYYY 12:00:00 AM" (no zero-padding on M or D)
+    dates.push(`${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()} 12:00:00 AM`);
   }
-  if (dates.length === 0) throw new Error("No FOC dates found on Lunar homepage — site may have changed");
   return dates;
 }
 
@@ -145,10 +150,29 @@ function normalizeLunarRow(row: Record<string, any>, now: string): PullListRow |
 
 async function fetchLunarForDate(focDate: string, now: string): Promise<PullListRow[]> {
   const url = `${LUNAR_DATA_BASE}?foc=${encodeURIComponent(focDate)}`;
-  const resp = await fetchWithTimeout(url);
+  // Use a longer timeout for the binary download; omit Accept-Encoding so the
+  // server can't send a compressed response that might stall the stream
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), LUNAR_TIMEOUT_MS);
+  const resp = await fetch(url, {
+    signal: ctrl.signal,
+    headers: {
+      ...BROWSER_HEADERS,
+      "Accept": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/octet-stream,*/*",
+      "Accept-Encoding": "identity",
+    },
+  }).finally(() => clearTimeout(timer));
   if (!resp.ok) throw new Error(`Lunar xlsx fetch failed for "${focDate}": ${resp.status}`);
 
+  const ct = resp.headers.get("content-type") ?? "";
   const buf = await resp.arrayBuffer();
+
+  // Guard against receiving an HTML error page instead of binary xlsx
+  if (buf.byteLength < 100 || (!ct.includes("spreadsheet") && !ct.includes("octet") && !ct.includes("excel") && !ct.includes("zip"))) {
+    const preview = new TextDecoder().decode(buf.slice(0, 200));
+    throw new Error(`Lunar xlsx for "${focDate}" looks wrong. Content-Type: ${ct}. Preview: ${preview}`);
+  }
+
   const wb = XLSX.read(new Uint8Array(buf), { type: "array" });
   // deno-lint-ignore no-explicit-any
   const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
@@ -159,17 +183,19 @@ async function fetchLunarForDate(focDate: string, now: string): Promise<PullList
   });
 }
 
-async function fetchAllLunar(parser: DOMParser, now: string): Promise<PullListRow[]> {
-  const focDates = await getLunarFocDates(parser);
+async function fetchAllLunar(_parser: DOMParser, now: string): Promise<PullListRow[]> {
+  const focDates = computeLunarFocDates();
   console.log(`Lunar: ${focDates.length} FOC dates`, focDates);
 
-  const all: PullListRow[] = [];
-  for (const date of focDates) {
-    const items = await fetchLunarForDate(date, now);
-    console.log(`Lunar FOC ${date}: ${items.length} rows`);
-    all.push(...items);
-  }
-  return all;
+  const results = await Promise.all(
+    focDates.map(date =>
+      fetchLunarForDate(date, now).then(items => {
+        console.log(`Lunar FOC ${date}: ${items.length} rows`);
+        return items;
+      })
+    )
+  );
+  return results.flat();
 }
 
 // ── PRH ───────────────────────────────────────────────────────────────────────
@@ -198,8 +224,8 @@ function normalizePRHCard(card: DomEl, now: string): PullListRow | null {
   const onSaleRaw = card.querySelector(".carousel-meta-onsale")?.textContent?.trim();
   const focRaw = card.querySelector(".carousel-meta-focdate")?.textContent?.trim();
 
-  const authors = card.querySelectorAll(".carousel-meta-author a")
-    .map((a) => a.textContent?.trim())
+  const authors = Array.from(card.querySelectorAll(".carousel-meta-author a"))
+    .map((a) => (a as DomEl).textContent?.trim())
     .filter(Boolean)
     .join(", ");
 
@@ -240,90 +266,112 @@ function parseCardsFromHtml(html: string, parser: DOMParser, now: string): { ite
   return { items, cardCount: cards.length };
 }
 
+// Returns the Monday-aligned FOC date range for the current 3-week sync window.
+// Format: MM/DD/YYYY (zero-padded), matching what PRH's get_product_list expects.
+function computePRHDateRange(): { from: string; to: string } {
+  const today = new Date();
+  const dow = today.getDay(); // 0=Sun…6=Sat
+  const daysToLastMonday = dow === 0 ? 6 : dow - 1;
+
+  const from = new Date(today);
+  from.setDate(today.getDate() - daysToLastMonday);
+
+  const to = new Date(from);
+  to.setDate(from.getDate() + 14); // current + next 2 Mondays = 3 FOC dates
+
+  const fmt = (d: Date) =>
+    `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;
+
+  return { from: fmt(from), to: fmt(to) };
+}
+
 async function fetchAllPRH(parser: DOMParser, now: string): Promise<PullListRow[]> {
-  // Force stable sort on initial page load via query param (Random sort causes duplicate/missing items)
-  const initialResp = await fetchWithTimeout(`${PRH_LIST_URL}?sort=title:asc`);
-  if (!initialResp.ok) throw new Error(`PRH initial fetch failed: ${initialResp.status}`);
-  const initialHtml = await initialResp.text();
+  // Step 1: Mint an anonymous nonce — no session or auth required.
+  const nonceResp = await fetchWithTimeout(PRH_AJAX_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ action: "get_nonce" }).toString(),
+  });
+  if (!nonceResp.ok) throw new Error(`PRH get_nonce failed: ${nonceResp.status}`);
 
-  const { items: firstItems, cardCount: firstCount } = parseCardsFromHtml(initialHtml, parser, now);
-  console.log(`PRH page 1: ${firstCount} cards, ${firstItems.length} normalized`);
-
-  // Deduplicate by isbn across pages
-  const allItems = new Map<string, PullListRow>();
-  for (const item of firstItems) allItems.set(item.sku, item);
-
-  // Discover AJAX pagination config from the load-more button
   // deno-lint-ignore no-explicit-any
-  const doc0 = parser.parseFromString(initialHtml, "text/html") as any;
-  const btn = doc0?.querySelector("#titlelist-load-more-button") as DomEl | null;
+  const nonceJson = await nonceResp.json() as any;
+  const nonce: string = nonceJson?.nonce ?? "";
+  if (!nonce) throw new Error(`PRH nonce missing: ${JSON.stringify(nonceJson)}`);
+  console.log(`PRH: nonce=${nonce}`);
 
-  if (!btn) {
-    console.log("PRH: no load-more button — single page");
-    return Array.from(allItems.values());
-  }
+  // Step 2: Paginate using get_product_list; response.data.content is the HTML fragment.
+  const { from: focFrom, to: focTo } = computePRHDateRange();
+  console.log(`PRH: date range ${focFrom} → ${focTo}`);
 
-  const nonce =
-    btn.getAttribute("data-nonce") ??
-    btn.getAttribute("data-security") ??
-    extractJsVar(initialHtml, "prhNonce") ??
-    extractJsVar(initialHtml, "titleListNonce") ??
-    extractJsVar(initialHtml, "nonce");
+  const baseFilters = JSON.stringify({
+    l1_category: "",
+    filters: {
+      category: [], "sale-status": [], format: [], age: [],
+      grade: [], guides: [], publisher: [], comics_publisher: [],
+    },
+  });
 
-  const ajaxUrl =
-    btn.getAttribute("data-ajax-url") ??
-    btn.getAttribute("data-url") ??
-    extractJsVar(initialHtml, "prhAjaxUrl") ??
-    extractJsVar(initialHtml, "ajaxurl") ??
-    extractJsVar(initialHtml, "ajax_url") ??
-    PRH_AJAX_FALLBACK;
+  const allItems = new Map<string, PullListRow>();
+  let start = 0;
 
-  const action =
-    btn.getAttribute("data-action") ??
-    btn.getAttribute("data-type") ??
-    "load_titlelist_items";
-
-  console.log(`PRH: ajaxUrl=${ajaxUrl}, action=${action}, nonce=${nonce ? "found" : "missing"}`);
-
-  if (!nonce) {
-    // Fallback: try WordPress /page/N/ URL pattern
-    console.log("PRH: no nonce, trying /page/N/ fallback");
-    for (let page = 2; page <= MAX_PRH_PAGES; page++) {
-      const resp = await fetchWithTimeout(`${PRH_LIST_URL}page/${page}/?sort=title:asc`).catch(() => null);
-      if (!resp?.ok) break;
-      const { items, cardCount } = parseCardsFromHtml(await resp.text(), parser, now);
-      console.log(`PRH page ${page} (fallback): ${cardCount} cards`);
-      if (cardCount === 0) break;
-      for (const item of items) allItems.set(item.sku, item);
-    }
-    return Array.from(allItems.values());
-  }
-
-  // AJAX pagination
-  for (let page = 2; page <= MAX_PRH_PAGES; page++) {
-    const body = new URLSearchParams({
-      action,
-      page_number: String(page),
-      paged: String(page),
-      nonce,
-      sort: "title:asc",
+  for (let page = 1; page <= MAX_PRH_PAGES; page++) {
+    const params = JSON.stringify({
+      isbn: [],        // must be explicit empty array; omitting causes silent total:0 filter
+      catSetId: "CM",
+      focDateFrom: focFrom,
+      focDateTo: focTo,
+      sort: ["title"],
+      dir: ["asc"],
+      start,
     });
 
-    const resp = await fetchWithTimeout(ajaxUrl, {
+    const body = new URLSearchParams({
+      action: "get_product_list",
+      postType: "dynamic-titlelist",
+      postId: PRH_POST_ID,
+      product_load_nonce: nonce,
+      params,
+      filters: baseFilters,
+    });
+
+    const resp = await fetchWithTimeout(PRH_AJAX_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: body.toString(),
     }).catch(() => null);
 
     if (!resp?.ok) {
-      console.log(`PRH AJAX page ${page}: failed (${resp?.status}), stopping`);
+      if (page === 1) throw new Error(`PRH get_product_list page 1 failed: ${resp?.status ?? "network error"}`);
+      console.log(`PRH page ${page}: request failed (${resp?.status}), stopping`);
       break;
     }
 
-    const { items, cardCount } = parseCardsFromHtml(await resp.text(), parser, now);
-    console.log(`PRH AJAX page ${page}: ${cardCount} cards, ${items.length} normalized`);
-    if (cardCount === 0) break;
+    // deno-lint-ignore no-explicit-any
+    const data = await resp.json() as any;
+    if (!data?.success) {
+      const preview = JSON.stringify(data).slice(0, 300);
+      if (page === 1) throw new Error(`PRH get_product_list page 1 not success: ${preview}`);
+      console.log(`PRH page ${page}: not success (${preview}), stopping`);
+      break;
+    }
+
+    const content: string = data?.data?.content ?? "";
+    const total: number = data?.data?.total ?? 0;
+    const more: boolean = !!data?.data?.more;
+    const nextStart: number = data?.data?.next_start_limit ?? (start + 36);
+
+    const { items, cardCount } = parseCardsFromHtml(content, parser, now);
+    console.log(`PRH page ${page} (start=${start}): total=${total}, cards=${cardCount}, items=${items.length}, more=${more}`);
+
+    if (page === 1 && cardCount === 0) {
+      const preview = content.slice(0, 400).replace(/\s+/g, " ");
+      throw new Error(`PRH page 1: 0 cards parsed. total=${total}. content-preview: ${preview}`);
+    }
+
     for (const item of items) allItems.set(item.sku, item);
+    if (!more) break;
+    start = nextStart;
   }
 
   return Array.from(allItems.values());
@@ -375,7 +423,27 @@ Deno.serve(async (req: Request) => {
   }
 
   const authHeader = req.headers.get("Authorization") ?? "";
-  if (!SYNC_SECRET || authHeader !== SYNC_SECRET) {
+  const rawToken = authHeader.replace(/^Bearer\s+/i, "");
+
+  // Accept the shared secret (pg_cron) or a valid admin user JWT (admin UI)
+  let authorized = SYNC_SECRET !== "" && rawToken === SYNC_SECRET;
+  if (!authorized && rawToken) {
+    const { data: { user } } = await createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { auth: { autoRefreshToken: false, persistSession: false }, global: { headers: { Authorization: authHeader } } }
+    ).auth.getUser();
+    if (user) {
+      const { data: profile } = await createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        { auth: { autoRefreshToken: false, persistSession: false } }
+      ).from("user_profiles").select("is_admin").eq("id", user.id).single();
+      authorized = !!profile?.is_admin;
+    }
+  }
+
+  if (!authorized) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
@@ -417,28 +485,34 @@ Deno.serve(async (req: Request) => {
   let lunarRowsSeen = 0, lunarRowsUpserted = 0, lunarError: string | null = null;
   let prhRowsSeen = 0, prhRowsUpserted = 0, prhError: string | null = null;
 
-  // Lunar — run independently so a PRH failure doesn't prevent Lunar data from saving
+  // Wrap both syncs so an unhandled crash still writes to the log
   try {
-    const items = await fetchAllLunar(parser, now);
-    lunarRowsSeen = items.length;
-    if (lunarRowsSeen === 0) throw new Error("Zero rows returned — site may have changed");
-    lunarRowsUpserted = await upsertBatch(serviceClient, items);
-    console.log(`Lunar done: ${lunarRowsUpserted}/${lunarRowsSeen} upserted`);
-  } catch (e) {
-    lunarError = e instanceof Error ? e.message : String(e);
-    console.error("Lunar error:", lunarError);
-  }
+    // Lunar — runs independently so a PRH failure doesn't block Lunar data
+    try {
+      const items = await fetchAllLunar(parser, now);
+      lunarRowsSeen = items.length;
+      if (lunarRowsSeen === 0) throw new Error("Zero rows returned — site may have changed");
+      lunarRowsUpserted = await upsertBatch(serviceClient, items);
+      console.log(`Lunar done: ${lunarRowsUpserted}/${lunarRowsSeen} upserted`);
+    } catch (e) {
+      lunarError = e instanceof Error ? e.message : String(e);
+      console.error("Lunar error:", lunarError);
+    }
 
-  // PRH — run independently
-  try {
-    const items = await fetchAllPRH(parser, now);
-    prhRowsSeen = items.length;
-    if (prhRowsSeen === 0) throw new Error("Zero rows returned — site may have changed");
-    prhRowsUpserted = await upsertBatch(serviceClient, items);
-    console.log(`PRH done: ${prhRowsUpserted}/${prhRowsSeen} upserted`);
-  } catch (e) {
-    prhError = e instanceof Error ? e.message : String(e);
-    console.error("PRH error:", prhError);
+    // PRH — runs independently
+    try {
+      const items = await fetchAllPRH(parser, now);
+      prhRowsSeen = items.length;
+      prhRowsUpserted = await upsertBatch(serviceClient, items);
+      console.log(`PRH done: ${prhRowsUpserted}/${prhRowsSeen} upserted`);
+    } catch (e) {
+      prhError = e instanceof Error ? e.message : String(e);
+      console.error("PRH error:", prhError);
+    }
+  } catch (fatal) {
+    // Catches anything that escaped the inner try/catch blocks
+    lunarError = lunarError ?? `Fatal: ${fatal instanceof Error ? fatal.message : String(fatal)}`;
+    prhError = prhError ?? `Fatal: ${fatal instanceof Error ? fatal.message : String(fatal)}`;
   }
 
   const status: SyncStatus =
