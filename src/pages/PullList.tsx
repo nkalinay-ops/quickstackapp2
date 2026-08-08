@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Search, BookOpen, Heart, ChevronDown, ChevronUp, Loader2, CheckCircle2 } from 'lucide-react';
+import { Search, BookOpen, Heart, ChevronDown, ChevronUp, Loader2, CheckCircle2, Sparkles } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { AlertModal } from '../components/AlertModal';
@@ -54,10 +54,19 @@ function matchesOwned(item: PullListItem, owned: OwnedRecord[]): boolean {
   );
 }
 
+// Looser match — true if the user owns any issue from the same series.
+// Used by the "For You" tab to surface new issues of series in their collection.
+function matchesSeries(item: PullListItem, owned: OwnedRecord[]): boolean {
+  const { series } = parseTitleParts(item.title);
+  const s = series.toLowerCase();
+  return owned.some(r => r.series.toLowerCase() === s);
+}
+
 export function PullList() {
   const { user } = useAuth();
   const [items, setItems] = useState<PullListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<'all' | 'for-you'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [publisherFilter, setPublisherFilter] = useState('All');
   const [formatFilter, setFormatFilter] = useState('All');
@@ -138,8 +147,14 @@ export function PullList() {
     return ['All', ...Array.from(set).sort()];
   }, [items]);
 
+  const forYouCount = useMemo(
+    () => items.filter(item => matchesSeries(item, collectionOwned)).length,
+    [items, collectionOwned]
+  );
+
   const filtered = useMemo(() => {
     return items.filter(item => {
+      if (viewMode === 'for-you' && !matchesSeries(item, collectionOwned)) return false;
       if (publisherFilter !== 'All' && item.publisher !== publisherFilter) return false;
       if (formatFilter !== 'All' && item.format !== formatFilter) return false;
       if (releaseDateFilter !== 'All' && item.on_sale_date !== releaseDateFilter) return false;
@@ -153,7 +168,7 @@ export function PullList() {
       }
       return true;
     });
-  }, [items, publisherFilter, formatFilter, releaseDateFilter, searchQuery]);
+  }, [items, viewMode, collectionOwned, publisherFilter, formatFilter, releaseDateFilter, searchQuery]);
 
   const groupedByReleaseDate = useMemo(() => {
     const groups = new Map<string, PullListItem[]>();
@@ -286,7 +301,39 @@ export function PullList() {
     <div className="min-h-screen bg-gray-950 text-white">
       <div className="max-w-2xl mx-auto px-4 py-6">
         <h1 className="text-2xl font-bold mb-1">New Comics</h1>
-        <p className="text-gray-400 text-sm mb-5">Upcoming releases by store date</p>
+        <p className="text-gray-400 text-sm mb-4">Upcoming releases by store date</p>
+
+        {/* View mode tabs */}
+        <div className="flex gap-1 bg-gray-900 p-1 rounded-lg mb-4">
+          <button
+            onClick={() => setViewMode('all')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium rounded-md transition-colors ${
+              viewMode === 'all'
+                ? 'bg-gray-700 text-white'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setViewMode('for-you')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium rounded-md transition-colors ${
+              viewMode === 'for-you'
+                ? 'bg-indigo-600 text-white'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            <Sparkles size={14} />
+            For You
+            {forYouCount > 0 && (
+              <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                viewMode === 'for-you' ? 'bg-indigo-500 text-white' : 'bg-gray-700 text-gray-300'
+              }`}>
+                {forYouCount}
+              </span>
+            )}
+          </button>
+        </div>
 
         {/* Search */}
         <div className="relative mb-3">
@@ -341,8 +388,18 @@ export function PullList() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-16 text-gray-500">
-            <p className="text-lg font-medium mb-1">No results</p>
-            <p className="text-sm">Try adjusting your filters or search.</p>
+            {viewMode === 'for-you' && forYouCount === 0 ? (
+              <>
+                <Sparkles size={32} className="mx-auto mb-3 text-gray-700" />
+                <p className="text-lg font-medium mb-1">Nothing here yet</p>
+                <p className="text-sm">Add comics to your collection and we'll surface new issues of those series here.</p>
+              </>
+            ) : (
+              <>
+                <p className="text-lg font-medium mb-1">No results</p>
+                <p className="text-sm">Try adjusting your filters or search.</p>
+              </>
+            )}
           </div>
         ) : (
           Array.from(groupedByReleaseDate.entries()).map(([releaseDate, group]) => (
