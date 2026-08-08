@@ -215,11 +215,16 @@ Changes applied to QA that have **not** yet been deployed to production. Update 
 - `20260705141506_add_display_name_and_onboarding_to_user_profiles.sql` — adds `display_name` and `onboarding_completed_at` to `user_profiles` (new user onboarding flow)
 - `20260708222017_fix_get_user_scan_info_renewal_interval.sql` — restores configurable renewal interval and `renewal_interval` field in `get_user_scan_info` (overwritten by 20260628 migration)
 - `20260708223721_protect_scan_count_from_user_writes.sql` — trigger blocks authenticated users from directly writing to `monthly_scan_count`, `scan_month_reset_at`, `user_tier`, `is_admin` on `user_profiles`
+- `20260803085537_create_pull_list_tables.sql` — creates `pull_list_items` and `pull_list_sync_log` tables for the pull list feature
+- `20260803085638_pull_list_stub_data.sql` — stub data for pull list UI development (16 rows across 3 FOC dates, Lunar + PRH)
+- `20260803132656_replace_pull_list_stub_data.sql` — replaces stub data with 25 richer entries across 4 September release dates (Lunar single issues + PRH trades)
+- `20260803140000_add_pull_list_item_id_to_wishlist.sql` — adds `pull_list_item_id` FK to `wishlist`; enables Pulls filter tab in Wishlist and Upcoming Pulls widget on Dashboard
+- `20260806211925_setup_pull_list_sync_cron.sql` — enables pg_cron, creates `trigger_pull_list_sync()` wrapper, schedules primary (Mon 6AM UTC) and retry (Mon 11AM UTC) cron jobs. **Requires manual secret insert: `INSERT INTO app_settings (key, value) VALUES ('pull_list_sync_secret', '<secret>')`**
 
 ### Edge Functions
 
-- `update-subscription` — now sets `can_bulk_upload` based on tier (true for paid/plus, false for free)
 - `scan-comic` — increment_scan_count is now awaited (was fire-and-forget); fixes scan count not persisting after logout/login
+- `sync-pull-list` — new function; fetches Lunar xlsx + PRH DOM, normalizes, upserts to pull_list_items, logs to pull_list_sync_log. Deployed to QA. Requires PULL_LIST_SYNC_SECRET env var set in Supabase dashboard secrets before it can be called.
 
 ---
 

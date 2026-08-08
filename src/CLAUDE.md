@@ -18,7 +18,7 @@ window.dispatchEvent(new CustomEvent('navigate', { detail: 'collection' }));
 ```
 
 ### Valid page values
-`'dashboard' | 'collection' | 'add' | 'wishlist' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload'`
+`'dashboard' | 'collection' | 'add' | 'wishlist' | 'pull-list' | 'settings' | 'beta-keys' | 'admin' | 'bulk-upload'`
 
 Plus unauthenticated pages: `'auth' | 'forgot-password' | 'reset-password' | 'email-confirmed'`
 

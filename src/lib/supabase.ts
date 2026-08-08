@@ -49,6 +49,7 @@ export type WishlistItem = {
   cover_variant: number | null;
   total_issues: number | null;
   total_issues_conflict: boolean | null;
+  pull_list_item_id: string | null;
   created_at: string;
 };
 
