@@ -38,6 +38,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Ref (not state) so the onAuthStateChange closure always reads the current value.
   // Without this guard, email confirmation in another tab fires SIGNED_IN and auto-logs in the user.
   const expectingSignIn = useRef(false);
+  // Tracks whether this tab already has an active session. When the access token
+  // expires and Supabase refreshes it after the tab is re-focused, it can fire
+  // SIGNED_IN (not TOKEN_REFRESHED). We must not treat that as an unauthorized
+  // cross-tab login — only block SIGNED_IN if this tab has no active session yet.
+  const hasActiveSession = useRef(false);
 
   const checkTerminationStatus = async (userId: string): Promise<boolean> => {
     const { data } = await supabase
@@ -136,7 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // in another tab). Sign out immediately to prevent auto-login.
             // On native (Android/iOS) there are no other tabs, so SIGNED_IN can only
             // mean a legitimate session restore after the app was backgrounded — skip the guard.
-            if (event === 'SIGNED_IN' && !expectingSignIn.current && !isNativePlatform()) {
+            if (event === 'SIGNED_IN' && !expectingSignIn.current && !isNativePlatform() && !hasActiveSession.current) {
               await supabase.auth.signOut();
               setUser(null);
               setSession(null);
@@ -148,16 +153,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const isTerminated = await checkTerminationStatus(session.user.id);
             if (isTerminated) {
               await supabase.auth.signOut();
+              hasActiveSession.current = false;
               setUser(null);
               setSession(null);
               setIsAdmin(false);
             } else {
               await fetchAdminStatus(session.user.id);
+              hasActiveSession.current = true;
               setUser(session.user);
               setSession(session);
               loginRevenueCat(session.user.id);
             }
           } else {
+            hasActiveSession.current = false;
             setUser(null);
             setSession(null);
             setIsAdmin(false);
