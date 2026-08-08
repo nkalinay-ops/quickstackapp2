@@ -55,11 +55,15 @@ function matchesOwned(item: PullListItem, owned: OwnedRecord[]): boolean {
 }
 
 // Looser match — true if the user owns any issue from the same series.
-// Used by the "For You" tab to surface new issues of series in their collection.
+// Uses bidirectional includes so "The Amazing Spider-Man" matches "Amazing Spider-Man"
+// regardless of which side has the article prefix.
 function matchesSeries(item: PullListItem, owned: OwnedRecord[]): boolean {
   const { series } = parseTitleParts(item.title);
   const s = series.toLowerCase();
-  return owned.some(r => r.series.toLowerCase() === s);
+  return owned.some(r => {
+    const cs = r.series.toLowerCase();
+    return cs === s || cs.includes(s) || s.includes(cs);
+  });
 }
 
 export function PullList() {
@@ -72,9 +76,11 @@ export function PullList() {
   const [formatFilter, setFormatFilter] = useState('All');
   const [releaseDateFilter, setReleaseDateFilter] = useState('All');
 
-  // Cross-reference state — populated from user's collection + wishlist on load
+  // Cross-reference state — loaded lazily when the user first opens the For You tab
   const [collectionOwned, setCollectionOwned] = useState<OwnedRecord[]>([]);
   const [wishlistOwned, setWishlistOwned] = useState<OwnedRecord[]>([]);
+  const [forYouLoaded, setForYouLoaded] = useState(false);
+  const [forYouLoading, setForYouLoading] = useState(false);
 
   // Pending add action — set when a duplicate is detected
   const [confirmDupe, setConfirmDupe] = useState<{
@@ -92,32 +98,38 @@ export function PullList() {
   }>({ isOpen: false, message: '' });
 
   useEffect(() => {
-    if (user) loadAll();
+    if (user) loadPullList();
   }, [user]);
 
-  async function loadAll() {
-    setLoading(true);
-    const [pullRes, comicsRes, wishlistRes] = await Promise.all([
-      supabase
-        .from('pull_list_items')
-        .select('id, source, sku, title, publisher, format, variant_label, price, foc_date, on_sale_date, writer, artist, upc_isbn, cover_image_url')
-        .or('format.is.null,format.not.in.(Board Book,Book & Toy,Boxed Set,Cards,Merchandise)')
-        .order('on_sale_date', { ascending: true })
-        .order('title', { ascending: true }),
-      supabase
-        .from('comics')
-        .select('series, issue_number')
-        .eq('user_id', user!.id),
-      supabase
-        .from('wishlist')
-        .select('series, issue_number')
-        .eq('user_id', user!.id),
-    ]);
+  // Triggered when the user switches to the For You tab for the first time
+  useEffect(() => {
+    if (viewMode === 'for-you' && user && !forYouLoaded && !forYouLoading) {
+      loadForYou();
+    }
+  }, [viewMode, user]);
 
-    if (pullRes.data) setItems(pullRes.data as PullListItem[]);
+  async function loadPullList() {
+    setLoading(true);
+    const { data } = await supabase
+      .from('pull_list_items')
+      .select('id, source, sku, title, publisher, format, variant_label, price, foc_date, on_sale_date, writer, artist, upc_isbn, cover_image_url')
+      .or('format.is.null,format.not.in.(Board Book,Book & Toy,Boxed Set,Cards,Merchandise)')
+      .order('on_sale_date', { ascending: true })
+      .order('title', { ascending: true });
+    if (data) setItems(data as PullListItem[]);
+    setLoading(false);
+  }
+
+  async function loadForYou() {
+    setForYouLoading(true);
+    const [comicsRes, wishlistRes] = await Promise.all([
+      supabase.from('comics').select('series, issue_number').eq('user_id', user!.id),
+      supabase.from('wishlist').select('series, issue_number').eq('user_id', user!.id),
+    ]);
     if (comicsRes.data) setCollectionOwned(comicsRes.data as OwnedRecord[]);
     if (wishlistRes.data) setWishlistOwned(wishlistRes.data as OwnedRecord[]);
-    setLoading(false);
+    setForYouLoaded(true);
+    setForYouLoading(false);
   }
 
   // Derive added status for every pull list item
@@ -325,7 +337,7 @@ export function PullList() {
           >
             <Sparkles size={14} />
             For You
-            {forYouCount > 0 && (
+            {forYouLoaded && forYouCount > 0 && (
               <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
                 viewMode === 'for-you' ? 'bg-indigo-500 text-white' : 'bg-gray-700 text-gray-300'
               }`}>
@@ -381,12 +393,18 @@ export function PullList() {
         </div>
 
         {/* Results */}
-        {items.length === 0 ? (
+        {forYouLoading ? (
+          <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-3">
+            <Loader2 size={28} className="animate-spin" />
+            <p className="text-sm">Loading your collection…</p>
+          </div>
+        ) : items.length === 0 ? (
           <div className="text-center py-16 text-gray-500">
             <p className="text-lg font-medium mb-1">No upcoming releases</p>
             <p className="text-sm">Check back soon.</p>
           </div>
         ) : filtered.length === 0 ? (
+
           <div className="text-center py-16 text-gray-500">
             {viewMode === 'for-you' && forYouCount === 0 ? (
               <>
