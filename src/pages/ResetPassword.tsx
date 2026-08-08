@@ -7,6 +7,7 @@ export function ResetPassword() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -15,43 +16,51 @@ export function ResetPassword() {
   const [exchangeError, setExchangeError] = useState('');
 
   useEffect(() => {
-    let recoveryConfirmed = false;
+    let settled = false;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event) => {
-        console.log('Auth event:', event);
-        if (event === 'PASSWORD_RECOVERY') {
-          recoveryConfirmed = true;
-          window.history.replaceState({}, '', '/?page=reset-password');
-          setExchangeError('');
-          setExchanging(false);
-        }
-      }
-    );
-
-    const checkSession = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const isResetUrl = params.has('code') || params.get('page') === 'reset-password';
-      const { data, error } = await supabase.auth.getSession();
-      console.log('Reset password getSession:', data.session, error);
-      if (data.session && isResetUrl) {
-        recoveryConfirmed = true;
-        setExchangeError('');
-        setExchanging(false);
-      }
+    const confirm = () => {
+      if (settled) return;
+      settled = true;
+      window.history.replaceState({}, '', '/?page=reset-password');
+      setExchangeError('');
+      setExchanging(false);
     };
 
-    checkSession();
+    const fail = (msg: string) => {
+      if (settled) return;
+      settled = true;
+      setExchangeError(msg);
+      setExchanging(false);
+    };
 
-    const timeout = setTimeout(async () => {
-      await checkSession();
-      if (!recoveryConfirmed) {
-        setExchangeError(
-          'This reset link has expired or already been used. Please request a new one.'
-        );
-        setExchanging(false);
+    // The Supabase client (detectSessionInUrl: true) auto-exchanges the ?code=
+    // parameter before any React component mounts. Calling exchangeCodeForSession
+    // explicitly after that consumes an already-used code and always errors.
+    // Instead, listen for PASSWORD_RECOVERY which the client emits after a
+    // successful auto-exchange, and use a timeout as the true expired-link path.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        confirm();
       }
-    }, 10000);
+    });
+
+    // If the page was reached via ?page=reset-password (no code — e.g. a direct
+    // navigation after a previous exchange), check for an existing session.
+    const params = new URLSearchParams(window.location.search);
+    if (!params.get('code')) {
+      supabase.auth.getSession().then(({ data }) => {
+        if (data.session) {
+          confirm();
+        } else {
+          fail('This reset link has expired or already been used. Please request a new one.');
+        }
+      });
+    }
+
+    // Timeout: if PASSWORD_RECOVERY never fires, the link was invalid or expired.
+    const timeout = setTimeout(() => {
+      fail('This reset link has expired or already been used. Please request a new one.');
+    }, 8000);
 
     return () => {
       subscription.unsubscribe();
@@ -97,9 +106,21 @@ export function ResetPassword() {
               <CheckCircle className="text-green-400" size={32} />
             </div>
             <h1 className="text-3xl font-bold text-white mb-2">Password updated successfully</h1>
-            <p className="text-gray-400">
-              Password updated successfully. You can now return to the QuickStack app and sign in with your new password.
+            <p className="text-gray-400 mb-6">
+              You can now sign in with your new password.
             </p>
+            <button
+              disabled={signingOut}
+              onClick={async () => {
+                setSigningOut(true);
+                await supabase.auth.signOut({ scope: 'global' });
+                window.history.replaceState({}, '', '/');
+                window.dispatchEvent(new CustomEvent('navigate', { detail: 'auth' }));
+              }}
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {signingOut ? 'Signing out...' : 'Go to login'}
+            </button>
           </div>
         </div>
       </div>

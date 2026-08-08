@@ -121,7 +121,12 @@ function issueRange(comics: Comic[]): string {
   return `#${nums[0]} – #${nums[nums.length - 1]}`;
 }
 
-export function Collection() {
+export function Collection({ initialComicId, onComicConsumed, initialMode, onModeConsumed }: {
+  initialComicId?: string | null;
+  onComicConsumed?: () => void;
+  initialMode?: 'all' | 'week' | null;
+  onModeConsumed?: () => void;
+}) {
   const { user } = useAuth();
   const [comics, setComics] = useState<Comic[]>([]);
   const [filteredComics, setFilteredComics] = useState<Comic[]>([]);
@@ -147,6 +152,7 @@ export function Collection() {
   });
   const [showCamera, setShowCamera] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [weekFilterActive, setWeekFilterActive] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -155,18 +161,33 @@ export function Collection() {
 
   useEffect(() => {
     if (!searchQuery) {
-      setFilteredComics(comics);
+      if (weekFilterActive) {
+        const weekStart = new Date();
+        weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+        weekStart.setHours(0, 0, 0, 0);
+        setFilteredComics(comics.filter(c => new Date(c.created_at) >= weekStart));
+      } else {
+        setFilteredComics(comics);
+      }
       return;
     }
     const query = searchQuery.toLowerCase();
-    setFilteredComics(comics.filter(
+    const base = weekFilterActive
+      ? (() => {
+          const weekStart = new Date();
+          weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+          weekStart.setHours(0, 0, 0, 0);
+          return comics.filter(c => new Date(c.created_at) >= weekStart);
+        })()
+      : comics;
+    setFilteredComics(base.filter(
       (comic) =>
         comic.series.toLowerCase().includes(query) ||
         comic.story.toLowerCase().includes(query) ||
         comic.issue_number.toLowerCase().includes(query) ||
         comic.publisher.toLowerCase().includes(query)
     ));
-  }, [searchQuery, comics]);
+  }, [searchQuery, comics, weekFilterActive]);
 
   const loadComics = async () => {
     try {
@@ -178,6 +199,22 @@ export function Collection() {
       if (error) throw error;
       setComics(data || []);
       setFilteredComics(data || []);
+      if (initialComicId) {
+        const target = (data || []).find(c => c.id === initialComicId);
+        if (target) setSelectedComic(target);
+        onComicConsumed?.();
+      } else if (initialMode === 'all') {
+        setBrowseMode('all');
+        onModeConsumed?.();
+      } else if (initialMode === 'week') {
+        const weekStart = new Date();
+        weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+        weekStart.setHours(0, 0, 0, 0);
+        setBrowseMode('all');
+        setFilteredComics((data || []).filter(c => new Date(c.created_at) >= weekStart));
+        setWeekFilterActive(true);
+        onModeConsumed?.();
+      }
     } catch (error) {
       console.error('Error loading comics:', error);
     } finally {
@@ -188,19 +225,21 @@ export function Collection() {
   // ── Derived groupings (computed from in-memory comics) ──────────────────
 
   const publisherGroups = (): PublisherGroup[] => {
-    const map = new Map<string, Set<string>>();
-    const counts = new Map<string, number>();
+    const seriesMap = new Map<string, Set<string>>();
+    const issueMap = new Map<string, Set<string>>();
     for (const c of comics) {
       const pub = c.publisher.trim() || UNKNOWN_PUBLISHER;
-      if (!map.has(pub)) map.set(pub, new Set());
-      map.get(pub)!.add(c.series);
-      counts.set(pub, (counts.get(pub) || 0) + 1);
+      if (!seriesMap.has(pub)) seriesMap.set(pub, new Set());
+      seriesMap.get(pub)!.add(c.series);
+      if (!issueMap.has(pub)) issueMap.set(pub, new Set());
+      // key by series+issue to count distinct issues across the publisher
+      if (c.issue_number.trim()) issueMap.get(pub)!.add(`${c.series}::${c.issue_number.trim()}`);
     }
-    return Array.from(map.entries())
+    return Array.from(seriesMap.entries())
       .map(([publisher, seriesSet]) => ({
         publisher,
         seriesCount: seriesSet.size,
-        issueCount: counts.get(publisher) || 0,
+        issueCount: issueMap.get(publisher)?.size || 0,
       }))
       .sort((a, b) => a.publisher.localeCompare(b.publisher));
   };
@@ -209,15 +248,16 @@ export function Collection() {
     const inPub = comics.filter(c =>
       (c.publisher.trim() || UNKNOWN_PUBLISHER) === publisher
     );
-    const map = new Map<string, Set<string>>();
-    const counts = new Map<string, number>();
+    const storyMap = new Map<string, Set<string>>();
+    const issueMap = new Map<string, Set<string>>();
     for (const c of inPub) {
-      if (!map.has(c.series)) map.set(c.series, new Set());
-      if (c.story.trim()) map.get(c.series)!.add(c.story.trim());
-      counts.set(c.series, (counts.get(c.series) || 0) + 1);
+      if (!storyMap.has(c.series)) storyMap.set(c.series, new Set());
+      if (c.story.trim()) storyMap.get(c.series)!.add(c.story.trim());
+      if (!issueMap.has(c.series)) issueMap.set(c.series, new Set());
+      if (c.issue_number.trim()) issueMap.get(c.series)!.add(c.issue_number.trim());
     }
     const withCovers = inPub.filter(c => c.color_image_url || c.bw_image_url);
-    return Array.from(map.entries())
+    return Array.from(storyMap.entries())
       .map(([series, storySet]) => {
         const candidates = withCovers.filter(c => c.series === series);
         const pick = candidates.length > 0
@@ -226,7 +266,7 @@ export function Collection() {
         return {
           series,
           storyCount: storySet.size,
-          issueCount: counts.get(series) || 0,
+          issueCount: issueMap.get(series)?.size || 0,
           coverUrl: pick ? (pick.color_image_url || pick.bw_image_url) : null,
         };
       })
@@ -235,15 +275,16 @@ export function Collection() {
 
   // All series across all publishers (for the Series browse root)
   const seriesRootGroups = (): SeriesGroup[] => {
-    const map = new Map<string, Set<string>>();
-    const counts = new Map<string, number>();
+    const storyMap = new Map<string, Set<string>>();
+    const issueMap = new Map<string, Set<string>>();
     for (const c of comics) {
-      if (!map.has(c.series)) map.set(c.series, new Set());
-      if (c.story.trim()) map.get(c.series)!.add(c.story.trim());
-      counts.set(c.series, (counts.get(c.series) || 0) + 1);
+      if (!storyMap.has(c.series)) storyMap.set(c.series, new Set());
+      if (c.story.trim()) storyMap.get(c.series)!.add(c.story.trim());
+      if (!issueMap.has(c.series)) issueMap.set(c.series, new Set());
+      if (c.issue_number.trim()) issueMap.get(c.series)!.add(c.issue_number.trim());
     }
     const withCovers = comics.filter(c => c.color_image_url || c.bw_image_url);
-    return Array.from(map.entries())
+    return Array.from(storyMap.entries())
       .map(([series, storySet]) => {
         const candidates = withCovers.filter(c => c.series === series);
         const pick = candidates.length > 0
@@ -252,7 +293,7 @@ export function Collection() {
         return {
           series,
           storyCount: storySet.size,
-          issueCount: counts.get(series) || 0,
+          issueCount: issueMap.get(series)?.size || 0,
           coverUrl: pick ? (pick.color_image_url || pick.bw_image_url) : null,
         };
       })
@@ -297,12 +338,21 @@ export function Collection() {
         list.map(c => c.issue_number.trim()).filter(n => n !== '')
       ).size || list.length;
 
+      // Deduplicate list by issue_number for range display
+      const seenIssues = new Set<string>();
+      const dedupedList = list.filter(c => {
+        const key = c.issue_number.trim();
+        if (seenIssues.has(key)) return false;
+        seenIssues.add(key);
+        return true;
+      });
+
       const isComplete = totalIssues !== null && missingIssues.length === 0 && distinctIssueCount >= totalIssues;
 
       return {
         story,
         issueCount: distinctIssueCount,
-        issueRange: issueRange(list),
+        issueRange: issueRange(dedupedList),
         coverUrl: cover ? (cover.color_image_url || cover.bw_image_url) : null,
         totalIssues,
         isComplete,
@@ -366,6 +416,7 @@ export function Collection() {
   const switchMode = (mode: BrowseMode) => {
     setBrowseMode(mode);
     setSearchQuery('');
+    setWeekFilterActive(false);
     if (mode === 'publisher') {
       resetBrowse();
     } else if (mode === 'series') {
@@ -422,6 +473,8 @@ export function Collection() {
           cover_variant: editedComic.cover_variant,
           total_issues: editedComic.total_issues,
           total_issues_conflict: editedComic.total_issues_conflict,
+          purchase_price: editedComic.purchase_price,
+          purchase_date: editedComic.purchase_date,
         })
         .eq('id', editedComic.id);
       if (error) throw error;
@@ -510,7 +563,7 @@ export function Collection() {
     }
   };
 
-  const conditions = ['Mint', 'Near Mint', 'Very Fine', 'Very Good', 'Fine', 'Good', 'Fair', 'Poor'];
+  const conditions = ['Mint', 'Near Mint', 'Very Fine', 'Fine', 'Very Good', 'Good', 'Fair', 'Poor'];
 
   // ── Loading ───────────────────────────────────────────────────────────────
 
@@ -724,6 +777,60 @@ export function Collection() {
             ) : (
               <div className="text-lg">{displayComic.notes || '-'}</div>
             )}
+          </div>
+
+          <div>
+            <div className="text-sm text-gray-400 mb-1">Date Added to Collection</div>
+            <div className="text-lg">
+              {new Date(displayComic.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+            </div>
+          </div>
+
+          {/* Purchase Info */}
+          <div className="border-t border-gray-800 pt-4">
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Purchase Info</div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <div className="text-sm text-gray-400 mb-1">Price Paid (USD)</div>
+                {isEditing ? (
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={displayComic.purchase_price ?? ''}
+                      onChange={(e) => setEditedComic({ ...displayComic, purchase_price: e.target.value ? parseFloat(e.target.value) : null })}
+                      placeholder="0.00"
+                      className="w-full pl-7 pr-3 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                ) : (
+                  <div className="text-lg">
+                    {displayComic.purchase_price != null
+                      ? `$${displayComic.purchase_price.toFixed(2)}`
+                      : '-'}
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="text-sm text-gray-400 mb-1">Purchase Date</div>
+                {isEditing ? (
+                  <input
+                    type="date"
+                    value={displayComic.purchase_date ?? ''}
+                    onChange={(e) => setEditedComic({ ...displayComic, purchase_date: e.target.value || null })}
+                    className="w-full px-3 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
+                  />
+                ) : (
+                  <div className="text-lg">
+                    {displayComic.purchase_date
+                      ? new Date(displayComic.purchase_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })
+                      : '-'}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1142,14 +1249,43 @@ export function Collection() {
 
   // ── Flat all-comics list ──────────────────────────────────────────────────
 
-  const renderAllComics = () => (
+  const renderAllComics = () => {
+    const weekStart = weekFilterActive ? (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - d.getDay());
+      d.setHours(0, 0, 0, 0);
+      return d;
+    })() : null;
+
+    return (
     <>
+      {weekFilterActive && weekStart && (
+        <div className="flex items-center justify-between bg-green-950 border border-green-800 rounded-lg px-4 py-2.5 mb-3">
+          <div>
+            <span className="text-green-300 text-sm font-medium">Added this week</span>
+            <span className="text-green-500 text-xs ml-2">
+              Since {weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </span>
+          </div>
+          <button
+            onClick={() => { setWeekFilterActive(false); setSearchQuery(''); }}
+            className="p-1 text-green-500 hover:text-green-300 transition-colors"
+            aria-label="Clear week filter"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
       {filteredComics.length === 0 ? (
         <div className="bg-gray-900 rounded-lg p-8 text-center">
           <p className="text-gray-400 mb-2">
-            {searchQuery ? 'No comics match your search' : 'Your collection is empty'}
+            {searchQuery
+              ? 'No comics match your search'
+              : weekFilterActive
+                ? 'No comics added this week'
+                : 'Your collection is empty'}
           </p>
-          {!searchQuery && (
+          {!searchQuery && !weekFilterActive && (
             <p className="text-gray-500 text-sm">Start adding comics to build your collection</p>
           )}
         </div>
@@ -1171,7 +1307,8 @@ export function Collection() {
         </div>
       )}
     </>
-  );
+    );
+  };
 
   // ── Root render ───────────────────────────────────────────────────────────
 

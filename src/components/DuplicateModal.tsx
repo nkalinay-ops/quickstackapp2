@@ -1,9 +1,11 @@
+import { useEffect } from 'react';
 import { X, Copy, Plus } from 'lucide-react';
 import { Comic } from '../lib/supabase';
 
 interface DuplicateModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onDiscard: () => void;
   existingComic: Comic;
   newComicImage: string | null;
   onIncreaseCopyCount: () => void;
@@ -14,12 +16,19 @@ interface DuplicateModalProps {
 export default function DuplicateModal({
   isOpen,
   onClose,
+  onDiscard,
   existingComic,
   newComicImage,
   onIncreaseCopyCount,
   onAddAsSeparate,
   isProcessing,
 }: DuplicateModalProps) {
+  useEffect(() => {
+    if (!isOpen) return;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
@@ -113,7 +122,7 @@ export default function DuplicateModal({
             </button>
 
             <button
-              onClick={onClose}
+              onClick={onDiscard}
               disabled={isProcessing}
               className="w-full bg-gray-800 text-gray-300 py-3 px-4 rounded-lg font-medium border border-gray-700 hover:bg-gray-750 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >

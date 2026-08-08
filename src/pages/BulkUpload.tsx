@@ -37,6 +37,8 @@ interface ComicRow {
   copy_count?: string | number;
   cover_variant?: string | number;
   total_issues?: string | number;
+  purchase_price?: string | number;
+  purchase_date?: string;
 }
 
 export function BulkUpload() {
@@ -161,7 +163,7 @@ export function BulkUpload() {
     try {
       const { data, error } = await supabase
         .from('comics')
-        .select('series, story, issue_number, publisher, year, condition, notes, copy_count, cover_variant, total_issues')
+        .select('series, story, issue_number, publisher, year, condition, notes, copy_count, cover_variant, total_issues, purchase_price, purchase_date')
         .eq('user_id', user.id)
         .order('series', { ascending: true });
 
@@ -182,6 +184,8 @@ export function BulkUpload() {
         'Copy Count': c.copy_count ?? 1,
         'Cover Variant': c.cover_variant ?? '',
         'Total Issues in Arc': c.total_issues ?? '',
+        'Purchase Price': c.purchase_price ?? '',
+        'Purchase Date': c.purchase_date ?? '',
       }));
 
       const worksheet = XLSX.utils.json_to_sheet(rows);
@@ -211,6 +215,8 @@ export function BulkUpload() {
         'Copy Count': 1,
         'Cover Variant': '',
         'Total Issues in Arc': 6,
+        'Purchase Price': '12.50',
+        'Purchase Date': '2024-03-15',
       },
       {
         Series: 'Batman',
@@ -223,6 +229,8 @@ export function BulkUpload() {
         'Copy Count': 2,
         'Cover Variant': 2,
         'Total Issues in Arc': '',
+        'Purchase Price': '',
+        'Purchase Date': '',
       },
     ];
 
@@ -284,6 +292,8 @@ export function BulkUpload() {
     if (['copy count', 'copy_count', 'copies', 'quantity'].includes(normalized)) return 'copy_count';
     if (['cover variant', 'cover_variant', 'variant', 'variant number', 'variant #'].includes(normalized)) return 'cover_variant';
     if (['total issues in arc', 'total issues', 'total_issues', 'issues in arc', 'arc length'].includes(normalized)) return 'total_issues';
+    if (['purchase price', 'purchase_price', 'price', 'paid', 'price paid'].includes(normalized)) return 'purchase_price';
+    if (['purchase date', 'purchase_date', 'date purchased', 'bought date', 'date bought'].includes(normalized)) return 'purchase_date';
 
     return normalized;
   };
@@ -317,6 +327,8 @@ export function BulkUpload() {
               copy_count: normalizedRow.copy_count || '',
               cover_variant: normalizedRow.cover_variant || '',
               total_issues: normalizedRow.total_issues || '',
+              purchase_price: normalizedRow.purchase_price || '',
+              purchase_date: normalizedRow.purchase_date ? String(normalizedRow.purchase_date) : '',
             };
           });
 

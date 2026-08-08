@@ -7,15 +7,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.error('[QuickStack] Missing Supabase environment variables. Check your .env file.');
 }
 
-console.log('Supabase auth config:', {
-  detectSessionInUrl: true,
-  flowType: 'pkce'
-});
-
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     detectSessionInUrl: true,
-    flowType: 'pkce',
     autoRefreshToken: true,
     persistSession: true,
   },
@@ -37,6 +31,8 @@ export type Comic = {
   cover_variant: number | null;
   total_issues: number | null;
   total_issues_conflict: boolean | null;
+  purchase_price: number | null;
+  purchase_date: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -53,5 +49,22 @@ export type WishlistItem = {
   cover_variant: number | null;
   total_issues: number | null;
   total_issues_conflict: boolean | null;
+  pull_list_item_id: string | null;
   created_at: string;
+};
+
+export type OcrCorrectionRule = {
+  id: string;
+  user_id: string;
+  ocr_series: string;
+  ocr_story: string;
+  ocr_publisher: string;
+  corrected_series: string;
+  corrected_story: string;
+  corrected_publisher: string;
+  occurrence_count: number;
+  is_confirmed: boolean;
+  dismissed_at: string | null;
+  created_at: string;
+  updated_at: string;
 };

@@ -15,9 +15,12 @@ interface ComicData {
   year: number | null;
   total_issues: number | null;
   cover_variant: number | null;
+  cover_price: number | null;
+  confidence?: "high" | "medium" | "low";
 }
 
 const FREE_TIER_SCAN_LIMIT = 20;
+const PAID_TIER_SCAN_LIMIT = 500;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -45,7 +48,11 @@ Deno.serve(async (req: Request) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    const { data: { user }, error: authError } = await userClient.auth.getUser();
+    // Parse body and validate JWT in parallel — body parsing is independent of auth
+    const [{ data: { user }, error: authError }, body] = await Promise.all([
+      userClient.auth.getUser(),
+      req.json(),
+    ]);
 
     if (authError || !user) {
       return new Response(
@@ -54,9 +61,36 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Tier and scan limit check
-    const { data: scanInfo, error: scanInfoError } = await userClient
-      .rpc("get_user_scan_info", { p_user_id: user.id });
+    const { imageData, barcodeData } = body;
+
+    if (!imageData) {
+      return new Response(
+        JSON.stringify({ error: "No image data provided" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
+
+    if (!openaiApiKey) {
+      return new Response(
+        JSON.stringify({ error: "OpenAI API key not configured" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Tier check and correction rules fetch run in parallel — both need user.id, neither blocks the other
+    const [
+      { data: scanInfo, error: scanInfoError },
+      { data: correctionRules },
+    ] = await Promise.all([
+      userClient.rpc("get_user_scan_info", { p_user_id: user.id }),
+      userClient
+        .from("ocr_correction_rules")
+        .select("ocr_series, ocr_story, ocr_publisher, corrected_series, corrected_story, corrected_publisher")
+        .eq("is_confirmed", true)
+        .limit(20),
+    ]);
 
     if (scanInfoError || !scanInfo) {
       return new Response(
@@ -81,40 +115,34 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { imageData } = await req.json();
-
-    if (!imageData) {
+    if (tier === "paid" && monthlyCount >= PAID_TIER_SCAN_LIMIT) {
       return new Response(
-        JSON.stringify({ error: "No image data provided" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({
+          error: "Monthly scan limit reached. Upgrade to Plus for unlimited scanning.",
+          limitReached: true,
+          tier,
+          monthly_scan_count: monthlyCount,
+          scan_limit: PAID_TIER_SCAN_LIMIT,
+        }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
+    const correctionRulesBlock = correctionRules && correctionRules.length > 0
+      ? `\n\nKnown correction patterns for this user (apply these automatically if you see the OCR text on the left):\n` +
+        correctionRules.map(r => {
+          const from = [r.ocr_series, r.ocr_story, r.ocr_publisher].filter(Boolean).join(" / ");
+          const to = [r.corrected_series, r.corrected_story, r.corrected_publisher].filter(Boolean).join(" / ");
+          return `- "${from}" → "${to}"`;
+        }).join("\n")
+      : "";
 
-    if (!openaiApiKey) {
-      return new Response(
-        JSON.stringify({ error: "OpenAI API key not configured" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const ocrMessages = [
+      {
+        role: "system",
+        content: `You are an expert at reading comic book covers and comic book publishing history. Respond with valid JSON only — no text before or after.
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${openaiApiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content: `You are an expert at extracting text from comic book covers.
-
-CRITICAL: You MUST respond with valid JSON only. No explanatory text before or after.
-
-Your response format MUST be:
+Response format:
 {
   "series": "string",
   "story": "string",
@@ -123,86 +151,86 @@ Your response format MUST be:
   "year": number or null,
   "total_issues": number or null,
   "cover_variant": number or null,
+  "cover_price": number or null,
   "confidence": "high" | "medium" | "low"
 }
 
 Field definitions:
-- "series": The ongoing series name — the primary, recurring title of the comic (e.g., "The Amazing Spider-Man", "Batman", "X-Men"). This is usually the largest text on the cover.
-- "story": The individual story arc title or issue subtitle printed on the cover (e.g., "Kraven's Last Hunt", "Year One", "The Dark Phoenix Saga"). Leave empty string "" if no story subtitle is visible.
-- "issue_number": The issue number as a string, digits only — no # symbol. Convert written-out numbers to digits (e.g., "One" → "1", "Two of Six" → "2", "Issue Three" → "3"). For standard numeric issues this is straightforward (e.g., "#300" → "300"). Return empty string "" if no issue number is visible.
-- "publisher": Publisher name (Marvel, DC, Image, Dark Horse, etc.)
-- "year": Publication year as a number if visible, otherwise null
-- "total_issues": The total number of issues in the story arc or limited series. Look for patterns like "of 4", "#2 of 6", "Part 3 of 5", "Book 1 of 3", "Two of Six", "one of four", etc. Also convert written-out totals to digits ("of Six" → 6, "of Four" → 4). Extract only the total (e.g., "#2 of 6" → 6, "Two of Six" → 6). Return null if not visible or not a limited/arc series.
-- "cover_variant": The cover variant number if explicitly indicated on the cover. Look for labels like "Variant Cover", "Cover B", "Cover 2", "Variant 2", "1:25 Variant", "Incentive Variant", artist name variants, etc. Extract the variant number only as an integer (e.g., "Cover B" → 2, "Cover C" → 3, "Variant 2" → 2, "1:25 Variant" → null since it's a ratio not a sequential number). Return null if the cover shows no variant labeling or is a standard Cover A / first print.
+- "series": The ongoing franchise/series name — usually the largest text (e.g., "The Amazing Spider-Man", "Batman").
+- "story": The individual story arc subtitle for this issue (e.g., "Kraven's Last Hunt"). Empty string if none.
+- "issue_number": Issue number as digits only, no # symbol. Convert written-out numbers ("One" → "1", "Two of Six" → "2"). Empty string if not visible.
+- "publisher": Publisher name (Marvel, DC, Image, Dark Horse, etc.).
+- "year": Publication year as a number, or null.
+- "total_issues": Total issues in arc from patterns like "of 4", "#2 of 6", "Part 3 of 5". Convert written-out totals ("of Six" → 6). Null if not a limited series or not shown.
+- "cover_variant": Variant number if explicitly labeled ("Cover B" → 2, "Cover C" → 3, "Variant 2" → 2). Ratio variants like "1:25" → null. Null if standard Cover A or unlabeled.
+- "cover_price": The printed cover price as a decimal number (e.g., "$3.99" → 3.99, "£2.50" → 2.50). Null if not visible.
 
 Rules:
-1. "series" is the brand/franchise name that continues across many issues
-2. "story" is only the subtitle for this specific issue or arc — most issues have no story title
-3. For "issue_number": always output digits only. Written-out ordinals and cardinals must be converted ("First" → "1", "One" → "1", "Twenty-Two" → "22")
-4. For "total_issues": written-out numbers must be converted ("Six" → 6, "Twelve" → 12)
-5. For "cover_variant": letter suffixes map to numbers (A=1, B=2, C=3, D=4, etc.). Only set this when variant labeling is explicit on the cover.
-6. Extract publisher name
-7. Extract year if visible
-8. If you cannot see any text clearly, still return JSON with empty strings/nulls and "low" confidence
-9. NEVER respond with explanatory text - ONLY valid JSON
-
-Example responses:
-Good: {"series":"The Amazing Spider-Man","story":"Kraven's Last Hunt","issue_number":"294","publisher":"Marvel","year":1988,"total_issues":null,"cover_variant":null,"confidence":"high"}
-Good: {"series":"Batman","story":"Year One","issue_number":"1","publisher":"DC Comics","year":1987,"total_issues":4,"cover_variant":null,"confidence":"high"}
-Good: {"series":"Watchmen","story":"","issue_number":"3","publisher":"DC Comics","year":1986,"total_issues":12,"cover_variant":2,"confidence":"high"}
-Good: {"series":"X-Men","story":"The Dark Phoenix Saga","issue_number":"1","publisher":"Marvel","year":2023,"total_issues":6,"cover_variant":3,"confidence":"high"}
-Good: {"series":"Saga","story":"","issue_number":"1","publisher":"Image","year":2012,"total_issues":null,"cover_variant":null,"confidence":"high"}
-Good: {"series":"","story":"","issue_number":"","publisher":"","year":null,"total_issues":null,"cover_variant":null,"confidence":"low"}
-Bad: "I cannot see the text clearly in this image"
-Bad: "Here is what I found: {..."
-
-ALWAYS return valid JSON, even if the image is unclear.`
+1. "series" is the brand that spans many issues; "story" is only a subtitle for this specific issue.
+2. Issue numbers and totals: always output digits. Convert all written-out cardinals/ordinals.
+3. Cover variant letters map to numbers: A=1, B=2, C=3, D=4, etc.
+4. cover_price: strip the currency symbol and return only the numeric value.
+5. cover_price location: look carefully at the LOWER-LEFT and LOWER-RIGHT corners of the cover. The price is printed in a small box near the UPC barcode, typically in 6-8pt font (very small). Common formats: "$3.99", "£2.50", "€4.00". Do not confuse the price with the issue number.
+6. issue_number location: often printed near the title banner at the top, or in a small badge/circle on the cover. Also check for patterns like "#300", "No. 300", "Issue 300".
+7. If the image is unclear, return JSON with empty strings/nulls and "low" confidence.
+8. NEVER respond with explanatory text — ONLY valid JSON.` + correctionRulesBlock,
+      },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: `Extract all readable text from this comic book cover: series name, story/arc subtitle, issue number (digits only), publisher, year, total issues in arc if shown, any cover variant label, and the printed cover price if visible. Pay special attention to the corners — the cover price is almost always in the lower-left or lower-right corner near the barcode in very small print.${barcodeData ? `\n\nThe UPC barcode scanned from this cover reads: ${barcodeData}. Use this as additional context to help verify the issue number.` : ''}`
           },
           {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: `Extract all readable text from this comic book cover. Identify: the series name (ongoing franchise title), any story/arc subtitle, the issue number (convert written-out numbers like "One" or "Two of Six" to digits), the publisher, publication year, the total issues in the arc if shown (e.g. "of 6", "of Six"), and any cover variant label (e.g. "Cover B", "Variant 2"). Ignore artwork and decorative elements. Be accurate and structured.`
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: imageData,
-                  detail: "high"
-                }
-              }
-            ]
+            type: "image_url",
+            image_url: {
+              url: imageData,
+              detail: "high"
+            }
           }
         ],
-        max_tokens: 500,
-        temperature: 0.1,
+      },
+    ];
+
+    // First pass: gpt-4o-mini (fast path ~1-2s)
+    const miniResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${openaiApiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: ocrMessages,
+        max_tokens: 300,
+        temperature: 0,
         response_format: { type: "json_object" },
       }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("OpenAI API error:", response.status, errorText);
+    if (!miniResponse.ok) {
+      const errorText = await miniResponse.text();
+      console.error("OpenAI API error:", miniResponse.status, errorText);
       return new Response(
         JSON.stringify({
           error: "Failed to analyze image",
-          detail: `OpenAI API returned ${response.status}`,
+          detail: `OpenAI API returned ${miniResponse.status}`,
           openaiError: errorText.substring(0, 200)
         }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const data = await response.json();
-    console.log("OpenAI response data:", JSON.stringify(data));
+    const miniData = await miniResponse.json();
+    console.log("OpenAI mini response:", JSON.stringify(miniData));
 
-    const message = data.choices?.[0]?.message;
-    const content = message?.content;
-    const refusal = message?.refusal;
+    const miniMessage = miniData.choices?.[0]?.message;
+    const miniContent = miniMessage?.content;
+    const miniRefusal = miniMessage?.refusal;
 
-    if (refusal) {
-      console.error("OpenAI refused request:", refusal);
+    if (miniRefusal) {
+      console.error("OpenAI refused request:", miniRefusal);
       return new Response(
         JSON.stringify({
           error: "Unable to process image",
@@ -212,13 +240,13 @@ ALWAYS return valid JSON, even if the image is unclear.`
       );
     }
 
-    if (!content) {
-      console.error("No content in OpenAI response:", JSON.stringify(data));
+    if (!miniContent) {
+      console.error("No content in OpenAI mini response:", JSON.stringify(miniData));
       return new Response(
         JSON.stringify({
           error: "No content in response",
           detail: "OpenAI returned an empty response",
-          debugInfo: JSON.stringify(data).substring(0, 200)
+          debugInfo: JSON.stringify(miniData).substring(0, 200)
         }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -226,38 +254,117 @@ ALWAYS return valid JSON, even if the image is unclear.`
 
     let comicData: ComicData;
     try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        comicData = JSON.parse(jsonMatch[0]);
-      } else {
-        comicData = JSON.parse(content);
-      }
-    } catch (parseError) {
-      console.error("Failed to parse JSON:", content);
+      const miniMatch = miniContent.match(/\{[\s\S]*\}/);
+      comicData = JSON.parse(miniMatch ? miniMatch[0] : miniContent);
+    } catch {
+      // Mini parse failed — treat as low confidence so gpt-4o fallback runs
+      comicData = { series: "", story: "", issue_number: "", publisher: "", year: null, total_issues: null, cover_variant: null, cover_price: null, confidence: "low" };
+    }
 
-      if (content.toLowerCase().includes('unable') ||
-          content.toLowerCase().includes('cannot') ||
-          content.toLowerCase().includes('no text') ||
-          content.toLowerCase().includes('not visible')) {
+    // Gate: fall back to gpt-4o if mini wasn't confident or missed the core identifying fields
+    const needsFallback =
+      comicData.confidence !== "high" ||
+      !comicData.series ||
+      !comicData.issue_number;
+
+    if (needsFallback) {
+      console.log("gpt-4o-mini gate failed — falling back to gpt-4o");
+
+      const fullResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${openaiApiKey}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          messages: ocrMessages,
+          max_tokens: 300,
+          temperature: 0,
+          response_format: { type: "json_object" },
+        }),
+      });
+
+      if (!fullResponse.ok) {
+        const errorText = await fullResponse.text();
+        console.error("OpenAI gpt-4o API error:", fullResponse.status, errorText);
         return new Response(
           JSON.stringify({
-            error: "Unable to read comic cover. Please ensure the image is clear, well-lit, and the text is visible.",
-            detail: "The AI could not extract text from this image. Try taking another photo with better lighting or angle."
+            error: "Failed to analyze image",
+            detail: `OpenAI API returned ${fullResponse.status}`,
+            openaiError: errorText.substring(0, 200)
+          }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const fullData = await fullResponse.json();
+      console.log("OpenAI gpt-4o response:", JSON.stringify(fullData));
+
+      const fullMessage = fullData.choices?.[0]?.message;
+      const fullContent = fullMessage?.content;
+      const fullRefusal = fullMessage?.refusal;
+
+      if (fullRefusal) {
+        console.error("OpenAI gpt-4o refused request:", fullRefusal);
+        return new Response(
+          JSON.stringify({
+            error: "Unable to process image",
+            detail: "The image could not be analyzed. Please ensure it's a clear photo of a comic book cover."
           }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      return new Response(
-        JSON.stringify({
-          error: "Could not understand the response from the AI. Please try again.",
-          detail: content.substring(0, 200)
-        }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      if (!fullContent) {
+        console.error("No content in OpenAI gpt-4o response:", JSON.stringify(fullData));
+        return new Response(
+          JSON.stringify({
+            error: "No content in response",
+            detail: "OpenAI returned an empty response",
+            debugInfo: JSON.stringify(fullData).substring(0, 200)
+          }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      try {
+        const fullMatch = fullContent.match(/\{[\s\S]*\}/);
+        if (fullMatch) {
+          comicData = JSON.parse(fullMatch[0]);
+        } else {
+          comicData = JSON.parse(fullContent);
+        }
+      } catch (parseError) {
+        console.error("Failed to parse gpt-4o JSON:", fullContent);
+        // Note: fallback increment is NOT fired here — gpt-4o failed so we return an error below
+
+        if (fullContent.toLowerCase().includes('unable') ||
+            fullContent.toLowerCase().includes('cannot') ||
+            fullContent.toLowerCase().includes('no text') ||
+            fullContent.toLowerCase().includes('not visible')) {
+          return new Response(
+            JSON.stringify({
+              error: "Unable to read comic cover. Please ensure the image is clear, well-lit, and the text is visible.",
+              detail: "The AI could not extract text from this image. Try taking another photo with better lighting or angle."
+            }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            error: "Could not understand the response from the AI. Please try again.",
+            detail: fullContent.substring(0, 200)
+          }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // gpt-4o was used and parsed successfully — track the fallback
+      EdgeRuntime.waitUntil(userClient.rpc("increment_gpt4o_fallback_count", { p_user_id: user.id }));
     }
 
-    // Increment scan count after successful scan
     await userClient.rpc("increment_scan_count", { p_user_id: user.id });
 
     const newCount = monthlyCount + 1;
@@ -273,12 +380,14 @@ ALWAYS return valid JSON, even if the image is unclear.`
           year: comicData.year || null,
           total_issues: comicData.total_issues || null,
           cover_variant: comicData.cover_variant || null,
+          cover_price: comicData.cover_price ?? null,
         },
         scan_info: {
           tier,
           monthly_scan_count: newCount,
           scan_limit: tier === "free" ? FREE_TIER_SCAN_LIMIT : null,
           scans_remaining: tier === "free" ? FREE_TIER_SCAN_LIMIT - newCount : null,
+          model_used: needsFallback ? "gpt-4o" : "gpt-4o-mini",
         },
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }

@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
+import { Purchases } from '@revenuecat/purchases-capacitor';
 
 type LegalPage = 'privacy' | 'terms';
 
@@ -69,9 +70,15 @@ export function handleDeepLink(url: string): string | null {
     }
 
     const code = searchParams.get('code');
-    if (code) {
-      window.history.replaceState({}, '', `/?page=reset-password&code=${encodeURIComponent(code)}`);
+    if (code && type === 'recovery') {
+      window.history.replaceState({}, '', `/?page=reset-password&code=${encodeURIComponent(code)}&type=recovery`);
       return 'reset-password';
+    }
+    if (code) {
+      // Email confirmation callback — preserve the code and type for the auth listener
+      const confirmUrl = `/?page=email-confirmed&code=${encodeURIComponent(code)}${type ? `&type=${type}` : ''}`;
+      window.history.replaceState({}, '', confirmUrl);
+      return 'email-confirmed';
     }
 
     if (page) {
@@ -84,8 +91,29 @@ export function handleDeepLink(url: string): string | null {
   }
 }
 
+export async function loginRevenueCat(userId: string): Promise<void> {
+  if (!isNativePlatform()) return;
+  try {
+    await Purchases.logIn({ appUserID: userId });
+  } catch {
+    // Non-fatal — app functions normally without RC identity
+  }
+}
+
+export async function logoutRevenueCat(): Promise<void> {
+  if (!isNativePlatform()) return;
+  try {
+    await Purchases.logOut();
+  } catch {}
+}
+
 export function initCapacitor(): void {
   if (!isNativePlatform()) return;
+
+  const rcApiKey = import.meta.env.VITE_REVENUECAT_API_KEY as string | undefined;
+  if (rcApiKey) {
+    Purchases.configure({ apiKey: rcApiKey }).catch(() => {});
+  }
 
   if (typeof window !== 'undefined') {
     // Handle deep link if app was opened fresh from one
