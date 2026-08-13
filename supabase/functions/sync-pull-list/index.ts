@@ -97,13 +97,14 @@ function parsePRHDate(raw: string | undefined): string | null {
 
 // ── Lunar ──────────────────────────────────────────────────────────────────────
 
-// FOC dates are always on Mondays. Fetch 2 weeks back through 1 week forward
-// (4 dates total) so the window covers comics on shelves now as well as
-// near-term upcoming releases without blowing the CPU budget.
+// FOC dates are always on Mondays. Fetch 1 week back through 3 weeks forward
+// (5 dates total) so the window covers recent releases and ~6-7 weeks of upcoming.
 // FOC → on_sale lag is ~3-4 weeks, so:
-//   2 back  = comics releasing in ~1-2 weeks
-//   current = comics releasing in ~3-4 weeks
+//   1 back    = comics releasing this week / next week
+//   current   = comics releasing in ~3-4 weeks
 //   1 forward = comics releasing in ~4-5 weeks
+//   2 forward = comics releasing in ~5-6 weeks
+//   3 forward = comics releasing in ~6-7 weeks
 function computeLunarFocDates(): string[] {
   const today = new Date();
   const dow = today.getDay(); // 0=Sun, 1=Mon…6=Sat
@@ -112,7 +113,7 @@ function computeLunarFocDates(): string[] {
   lastMonday.setDate(today.getDate() - daysToLastMonday);
 
   const dates: string[] = [];
-  for (let i = -2; i <= 1; i++) {  // 2 back, current, 1 forward = 4 FOC dates
+  for (let i = -1; i <= 3; i++) {  // 1 back, current, 3 forward = 5 FOC dates
     const d = new Date(lastMonday);
     d.setDate(lastMonday.getDate() + i * 7);
     dates.push(`${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()} 12:00:00 AM`);
@@ -301,8 +302,8 @@ function parseCardsFromHtml(html: string, now: string): { items: PullListRow[]; 
   return { items, cardCount: starts.length };
 }
 
-// Returns the Monday-aligned FOC date range: 4 weeks back through 2 weeks forward.
-// Mirrors the Lunar window so both sources cover the same release dates.
+// Returns the Monday-aligned FOC date range: 1 week back through 5 weeks forward.
+// Mirrors the Lunar window so both sources cover the same release dates (~6-7 weeks out).
 // Format: MM/DD/YYYY (zero-padded), matching what PRH's get_product_list expects.
 function computePRHDateRange(): { from: string; to: string } {
   const today = new Date();
@@ -312,10 +313,10 @@ function computePRHDateRange(): { from: string; to: string } {
   lastMonday.setDate(today.getDate() - daysToLastMonday);
 
   const from = new Date(lastMonday);
-  from.setDate(lastMonday.getDate() - 28); // 4 weeks back
+  from.setDate(lastMonday.getDate() - 7); // 1 week back
 
   const to = new Date(lastMonday);
-  to.setDate(lastMonday.getDate() + 14); // 2 weeks forward
+  to.setDate(lastMonday.getDate() + 35); // 5 weeks forward
 
   const fmt = (d: Date) =>
     `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/${d.getFullYear()}`;
