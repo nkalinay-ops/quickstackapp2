@@ -114,7 +114,8 @@ export function PullList() {
       .select('id, source, sku, title, publisher, format, variant_label, price, foc_date, on_sale_date, writer, artist, upc_isbn, cover_image_url')
       .or('format.is.null,format.in.(Comic,Comic Book,Softcover,Paperback)')
       .order('on_sale_date', { ascending: true })
-      .order('title', { ascending: true });
+      .order('title', { ascending: true })
+      .limit(5000);
     if (data) setItems(data as PullListItem[]);
     setLoading(false);
   }
