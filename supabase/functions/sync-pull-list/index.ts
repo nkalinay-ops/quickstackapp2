@@ -1,7 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 import * as XLSX from "https://esm.sh/xlsx@0.18.5";
-import { DOMParser } from "https://deno.land/x/deno_dom@v0.1.48/deno-dom-wasm.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -24,16 +23,6 @@ interface PullListRow {
   cover_image_url: string | null;
   raw: Record<string, unknown>;
   last_seen_at: string;
-}
-
-// Minimal DOM interface for the elements we actually use —
-// avoids importing deno-dom's Element type directly, which conflicts with the Deno global
-interface DomEl {
-  querySelector(sel: string): DomEl | null;
-  querySelectorAll(sel: string): DomEl[];
-  getAttribute(name: string): string | null;
-  textContent: string | null;
-  childNodes: Array<{ nodeType: number; textContent: string | null }>;
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -108,10 +97,13 @@ function parsePRHDate(raw: string | undefined): string | null {
 
 // ── Lunar ──────────────────────────────────────────────────────────────────────
 
-// FOC dates are always on Mondays. Fetch 4 weeks back through 2 weeks forward
-// so the window covers comics on shelves NOW as well as upcoming releases.
-// (FOC → on_sale is ~3-4 weeks, so last Monday's FOC = releases ~3 weeks out;
-//  we need to go back 4 Mondays to capture the current release week.)
+// FOC dates are always on Mondays. Fetch 2 weeks back through 1 week forward
+// (4 dates total) so the window covers comics on shelves now as well as
+// near-term upcoming releases without blowing the CPU budget.
+// FOC → on_sale lag is ~3-4 weeks, so:
+//   2 back  = comics releasing in ~1-2 weeks
+//   current = comics releasing in ~3-4 weeks
+//   1 forward = comics releasing in ~4-5 weeks
 function computeLunarFocDates(): string[] {
   const today = new Date();
   const dow = today.getDay(); // 0=Sun, 1=Mon…6=Sat
@@ -120,10 +112,9 @@ function computeLunarFocDates(): string[] {
   lastMonday.setDate(today.getDate() - daysToLastMonday);
 
   const dates: string[] = [];
-  for (let i = -4; i <= 2; i++) {  // 4 back, current, 2 forward = 7 FOC dates
+  for (let i = -2; i <= 1; i++) {  // 2 back, current, 1 forward = 4 FOC dates
     const d = new Date(lastMonday);
     d.setDate(lastMonday.getDate() + i * 7);
-    // Lunar expects "M/D/YYYY 12:00:00 AM" (no zero-padding on M or D)
     dates.push(`${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()} 12:00:00 AM`);
   }
   return dates;
@@ -195,7 +186,7 @@ async function fetchLunarForDate(focDate: string, now: string): Promise<PullList
   });
 }
 
-async function fetchAllLunar(_parser: DOMParser, now: string): Promise<PullListRow[]> {
+async function fetchAllLunar(now: string): Promise<PullListRow[]> {
   const focDates = computeLunarFocDates();
   console.log(`Lunar: ${focDates.length} FOC dates`, focDates);
 
@@ -212,39 +203,68 @@ async function fetchAllLunar(_parser: DOMParser, now: string): Promise<PullListR
 
 // ── PRH ───────────────────────────────────────────────────────────────────────
 
-function normalizePRHCard(card: DomEl, now: string): PullListRow | null {
-  const isbn = card.querySelector(".carousel-meta-isbn")?.textContent?.trim() ?? "";
+// Strips HTML tags and decodes common entities from a raw HTML fragment.
+function stripTags(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Extracts the text content of the first element bearing the given CSS class
+// from a raw HTML fragment. Does not handle nested divs of the same class.
+function extractClassText(html: string, className: string): string {
+  const re = new RegExp(
+    `class="[^"]*\\b${className}\\b[^"]*"[^>]*>([\\s\\S]*?)<\\/div>`,
+    "i"
+  );
+  const m = html.match(re);
+  return m ? stripTags(m[1]) : "";
+}
+
+function normalizePRHCard(cardHtml: string, now: string): PullListRow | null {
+  const isbn = extractClassText(cardHtml, "carousel-meta-isbn");
   if (!isbn) return null;
 
-  // Take the first text node inside the title anchor to skip incentive-ratio spans like [1:10]
+  // First text node inside the title anchor — text before the first child tag
+  // strips incentive-ratio spans like [1:10] without a DOM parser.
   let title = "";
-  const titleAnchor = card.querySelector(".carousel-meta-title a");
-  if (titleAnchor) {
-    for (const node of titleAnchor.childNodes) {
-      if (node.nodeType === 3 /* TEXT_NODE */) {
-        title = node.textContent?.trim() ?? "";
-        if (title) break;
-      }
+  const titleDivM = cardHtml.match(/class="[^"]*carousel-meta-title[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+  if (titleDivM) {
+    const anchorM = titleDivM[1].match(/<a[^>]*>([\s\S]*?)<\/a>/i);
+    if (anchorM) {
+      title = anchorM[1].split(/<[^>]+>/)[0].trim();
     }
   }
   if (!title) return null;
 
-  const priceText = card.querySelector(".price-usa")?.textContent?.trim() ?? "";
+  const priceText = extractClassText(cardHtml, "price-usa");
   const priceMatch = priceText.match(/\$([\d.]+)/);
   const price = priceMatch ? parseFloat(priceMatch[1]) : null;
 
-  const onSaleRaw = card.querySelector(".carousel-meta-onsale")?.textContent?.trim();
-  const focRaw = card.querySelector(".carousel-meta-focdate")?.textContent?.trim();
+  const onSaleRaw = extractClassText(cardHtml, "carousel-meta-onsale") || undefined;
+  const focRaw = extractClassText(cardHtml, "carousel-meta-focdate") || undefined;
 
-  const authors = Array.from(card.querySelectorAll(".carousel-meta-author a"))
-    .map((a) => (a as DomEl).textContent?.trim())
-    .filter(Boolean)
-    .join(", ");
+  const authorDivM = cardHtml.match(/class="[^"]*carousel-meta-author[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+  let authors = "";
+  if (authorDivM) {
+    authors = [...authorDivM[1].matchAll(/<a[^>]*>([\s\S]*?)<\/a>/gi)]
+      .map(m => stripTags(m[1]))
+      .filter(Boolean)
+      .join(", ");
+  }
 
-  const formatRaw = card.querySelector(".carousel-meta-format")?.textContent?.trim();
+  const formatRaw = extractClassText(cardHtml, "carousel-meta-format");
   const format = formatRaw ? titleCase(formatRaw) : null;
-  const publisher = card.querySelector(".carousel-meta-division")?.textContent?.trim() || null;
-  const variantLabel = card.querySelector(".variant-cover-flag")?.textContent?.trim() || null;
+  const publisher = extractClassText(cardHtml, "carousel-meta-division") || null;
+
+  const variantM = cardHtml.match(/class="[^"]*variant-cover-flag[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+  const variantLabel = variantM ? stripTags(variantM[1]) || null : null;
 
   return {
     source: "prh",
@@ -252,7 +272,7 @@ function normalizePRHCard(card: DomEl, now: string): PullListRow | null {
     title,
     publisher,
     format,
-    variant_label: variantLabel || null,
+    variant_label: variantLabel,
     price,
     foc_date: parsePRHDate(focRaw),
     on_sale_date: parsePRHDate(onSaleRaw),
@@ -265,18 +285,20 @@ function normalizePRHCard(card: DomEl, now: string): PullListRow | null {
   };
 }
 
-function parseCardsFromHtml(html: string, parser: DOMParser, now: string): { items: PullListRow[]; cardCount: number } {
-  // deno-lint-ignore no-explicit-any
-  const doc = parser.parseFromString(html, "text/html") as any;
-  if (!doc) return { items: [], cardCount: 0 };
+function parseCardsFromHtml(html: string, now: string): { items: PullListRow[]; cardCount: number } {
+  // Locate each card's opening div by its class pair and slice the HTML between them.
+  const cardRe = /<div[^>]+class="[^"]*product-item-medium[^"]*toast-anchor[^"]*"[^>]*>/gi;
+  const starts: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = cardRe.exec(html)) !== null) starts.push(m.index);
 
-  const cards = doc.querySelectorAll(".product-item-medium.toast-anchor");
   const items: PullListRow[] = [];
-  for (const card of cards) {
-    const item = normalizePRHCard(card as DomEl, now);
+  for (let i = 0; i < starts.length; i++) {
+    const fragment = html.slice(starts[i], i + 1 < starts.length ? starts[i + 1] : html.length);
+    const item = normalizePRHCard(fragment, now);
     if (item) items.push(item);
   }
-  return { items, cardCount: cards.length };
+  return { items, cardCount: starts.length };
 }
 
 // Returns the Monday-aligned FOC date range: 4 weeks back through 2 weeks forward.
@@ -301,7 +323,7 @@ function computePRHDateRange(): { from: string; to: string } {
   return { from: fmt(from), to: fmt(to) };
 }
 
-async function fetchAllPRH(parser: DOMParser, now: string): Promise<PullListRow[]> {
+async function fetchAllPRH(now: string): Promise<PullListRow[]> {
   // Step 1: Mint an anonymous nonce — no session or auth required.
   const nonceResp = await fetchWithTimeout(PRH_AJAX_URL, {
     method: "POST",
@@ -377,7 +399,7 @@ async function fetchAllPRH(parser: DOMParser, now: string): Promise<PullListRow[
     const more: boolean = !!data?.data?.more;
     const nextStart: number = data?.data?.next_start_limit ?? (start + 36);
 
-    const { items, cardCount } = parseCardsFromHtml(content, parser, now);
+    const { items, cardCount } = parseCardsFromHtml(content, now);
     console.log(`PRH page ${page} (start=${start}): total=${total}, cards=${cardCount}, items=${items.length}, more=${more}`);
 
     if (page === 1 && cardCount === 0) {
@@ -501,9 +523,6 @@ Deno.serve(async (req: Request) => {
   const startedAt = Date.now();
   const now = new Date().toISOString();
 
-  // Shared DOMParser instance — initialised once, reused for both sources
-  const parser = new DOMParser();
-
   let lunarRowsSeen = 0, lunarRowsUpserted = 0, lunarError: string | null = null;
   let prhRowsSeen = 0, prhRowsUpserted = 0, prhError: string | null = null;
 
@@ -511,7 +530,7 @@ Deno.serve(async (req: Request) => {
   try {
     // Lunar — runs independently so a PRH failure doesn't block Lunar data
     try {
-      const items = await fetchAllLunar(parser, now);
+      const items = await fetchAllLunar(now);
       lunarRowsSeen = items.length;
       if (lunarRowsSeen === 0) throw new Error("Zero rows returned — site may have changed");
       lunarRowsUpserted = await upsertBatch(serviceClient, items);
@@ -523,7 +542,7 @@ Deno.serve(async (req: Request) => {
 
     // PRH — runs independently
     try {
-      const items = await fetchAllPRH(parser, now);
+      const items = await fetchAllPRH(now);
       prhRowsSeen = items.length;
       prhRowsUpserted = await upsertBatch(serviceClient, items);
       console.log(`PRH done: ${prhRowsUpserted}/${prhRowsSeen} upserted`);
