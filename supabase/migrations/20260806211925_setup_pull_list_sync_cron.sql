@@ -21,8 +21,9 @@
   - sync-pull-list edge function deployed to this project
 */
 
--- Enable pg_cron extension (requires superuser; on Supabase this is the postgres role)
+-- Enable required extensions (requires superuser; on Supabase this is the postgres role)
 CREATE EXTENSION IF NOT EXISTS pg_cron;
+CREATE EXTENSION IF NOT EXISTS pg_net;
 
 -- Reads pull_list_sync_secret from app_settings (bypasses RLS since pg_cron runs
 -- as postgres superuser) and POSTs to the sync-pull-list edge function.
