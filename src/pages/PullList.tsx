@@ -112,7 +112,7 @@ export function PullList() {
     const { data } = await supabase
       .from('pull_list_items')
       .select('id, source, sku, title, publisher, format, variant_label, price, foc_date, on_sale_date, writer, artist, upc_isbn, cover_image_url')
-      .in('format', ['Comic', 'Softcover'])
+      .or('format.is.null,format.in.(Comic,Comic Book,Softcover,Paperback)')
       .order('on_sale_date', { ascending: true })
       .order('title', { ascending: true });
     if (data) setItems(data as PullListItem[]);
