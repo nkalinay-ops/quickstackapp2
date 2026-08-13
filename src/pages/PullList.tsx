@@ -73,7 +73,6 @@ export function PullList() {
   const [viewMode, setViewMode] = useState<'all' | 'for-you'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [publisherFilter, setPublisherFilter] = useState('All');
-  const [formatFilter, setFormatFilter] = useState('All');
   const [releaseDateFilter, setReleaseDateFilter] = useState('All');
 
   // Cross-reference state — loaded lazily when the user first opens the For You tab
@@ -113,7 +112,7 @@ export function PullList() {
     const { data } = await supabase
       .from('pull_list_items')
       .select('id, source, sku, title, publisher, format, variant_label, price, foc_date, on_sale_date, writer, artist, upc_isbn, cover_image_url')
-      .or('format.is.null,format.not.in.(Board Book,Book & Toy,Boxed Set,Cards,Merchandise)')
+      .in('format', ['Comic', 'Softcover'])
       .order('on_sale_date', { ascending: true })
       .order('title', { ascending: true });
     if (data) setItems(data as PullListItem[]);
@@ -149,11 +148,6 @@ export function PullList() {
     return ['All', ...Array.from(set).sort()];
   }, [items]);
 
-  const formats = useMemo(() => {
-    const set = new Set(items.map(i => i.format).filter(Boolean) as string[]);
-    return ['All', ...Array.from(set).sort()];
-  }, [items]);
-
   const releaseDates = useMemo(() => {
     const set = new Set(items.map(i => i.on_sale_date).filter(Boolean) as string[]);
     return ['All', ...Array.from(set).sort()];
@@ -168,7 +162,6 @@ export function PullList() {
     return items.filter(item => {
       if (viewMode === 'for-you' && !matchesSeries(item, collectionOwned)) return false;
       if (publisherFilter !== 'All' && item.publisher !== publisherFilter) return false;
-      if (formatFilter !== 'All' && item.format !== formatFilter) return false;
       if (releaseDateFilter !== 'All' && item.on_sale_date !== releaseDateFilter) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
@@ -180,7 +173,7 @@ export function PullList() {
       }
       return true;
     });
-  }, [items, viewMode, collectionOwned, publisherFilter, formatFilter, releaseDateFilter, searchQuery]);
+  }, [items, viewMode, collectionOwned, publisherFilter, releaseDateFilter, searchQuery]);
 
   const groupedByReleaseDate = useMemo(() => {
     const groups = new Map<string, PullListItem[]>();
@@ -379,15 +372,6 @@ export function PullList() {
           >
             {publishers.map(p => (
               <option key={p} value={p}>{p === 'All' ? 'All Publishers' : p}</option>
-            ))}
-          </select>
-          <select
-            value={formatFilter}
-            onChange={e => setFormatFilter(e.target.value)}
-            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
-          >
-            {formats.map(f => (
-              <option key={f} value={f}>{f === 'All' ? 'All Formats' : f}</option>
             ))}
           </select>
         </div>
