@@ -108,10 +108,13 @@ function parsePRHDate(raw: string | undefined): string | null {
 
 // ── Lunar ──────────────────────────────────────────────────────────────────────
 
-// FOC dates are always on Mondays. Fetch 4 weeks back through 2 weeks forward
-// so the window covers comics on shelves NOW as well as upcoming releases.
-// (FOC → on_sale is ~3-4 weeks, so last Monday's FOC = releases ~3 weeks out;
-//  we need to go back 4 Mondays to capture the current release week.)
+// FOC dates are always on Mondays. Fetch 2 weeks back through 1 week forward
+// (4 dates total) so the window covers comics on shelves now as well as
+// near-term upcoming releases without blowing the CPU budget.
+// FOC → on_sale lag is ~3-4 weeks, so:
+//   2 back  = comics releasing in ~1-2 weeks
+//   current = comics releasing in ~3-4 weeks
+//   1 forward = comics releasing in ~4-5 weeks
 function computeLunarFocDates(): string[] {
   const today = new Date();
   const dow = today.getDay(); // 0=Sun, 1=Mon…6=Sat
@@ -120,10 +123,9 @@ function computeLunarFocDates(): string[] {
   lastMonday.setDate(today.getDate() - daysToLastMonday);
 
   const dates: string[] = [];
-  for (let i = -4; i <= 2; i++) {  // 4 back, current, 2 forward = 7 FOC dates
+  for (let i = -2; i <= 1; i++) {  // 2 back, current, 1 forward = 4 FOC dates
     const d = new Date(lastMonday);
     d.setDate(lastMonday.getDate() + i * 7);
-    // Lunar expects "M/D/YYYY 12:00:00 AM" (no zero-padding on M or D)
     dates.push(`${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()} 12:00:00 AM`);
   }
   return dates;
