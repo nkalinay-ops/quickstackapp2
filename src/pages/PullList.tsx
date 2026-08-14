@@ -109,14 +109,23 @@ export function PullList() {
 
   async function loadPullList() {
     setLoading(true);
-    const { data } = await supabase
-      .from('pull_list_items')
-      .select('id, source, sku, title, publisher, format, variant_label, price, foc_date, on_sale_date, writer, artist, upc_isbn, cover_image_url')
-      .or('format.is.null,format.in.(Comic,Comic Book,Softcover,Paperback)')
-      .order('on_sale_date', { ascending: true })
-      .order('title', { ascending: true })
-      .limit(5000);
-    if (data) setItems(data as PullListItem[]);
+    const PAGE_SIZE = 1000;
+    let from = 0;
+    const allItems: PullListItem[] = [];
+    while (true) {
+      const { data } = await supabase
+        .from('pull_list_items')
+        .select('id, source, sku, title, publisher, format, variant_label, price, foc_date, on_sale_date, writer, artist, upc_isbn, cover_image_url')
+        .or('format.is.null,format.in.(Comic,Comic Book,Softcover,Paperback)')
+        .order('on_sale_date', { ascending: true })
+        .order('title', { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+      if (!data || data.length === 0) break;
+      allItems.push(...(data as PullListItem[]));
+      if (data.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+    setItems(allItems);
     setLoading(false);
   }
 
